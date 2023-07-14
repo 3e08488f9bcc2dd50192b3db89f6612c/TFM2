@@ -1,0 +1,13 @@
+{
+	"game_name" : "Transformice",
+	"server_debug": true,
+	"maximum_players": 4096,
+	
+	"initial_cheese": 0,
+	"initial_strawberries": 0,
+	
+	"minimum_players": 11,
+	"minimum_normal_saves": 1000,
+	"minimum_hard_saves": 500,
+	"minimum_hours": 24
+}
