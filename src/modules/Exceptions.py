@@ -16,11 +16,10 @@ class ServeurException():
             return "Packet Erreur"
         return "Server Erreur"
         
-    def SaveException(self, client, Type):
-        c = open(f"./include/logs/Errors/packets.log", "a")
+    def SaveException(self, client, fileName, Type):
+        c = open(f"./include/logs/Errors/{fileName}.log", "a")
         c.write("=" * 60)
         c.write(f"\n- Time: {time.strftime('%d/%m/%Y - %H:%M:%S')}\n- Name: {client.playerName}\n- {self.getTypeError(Type)} {self.exception}\n")
         traceback.print_exc(file=c)
         c.write("\n")
         c.close()
-        #client.sendServerMessageAdmin(f"<BL>[<R>ERROR<BL>] The user <R>{client.playerName}</R> found {self.getTypeError(Type)} [{time.strftime('%d/%m/%Y - %H:%M:%S')}].")

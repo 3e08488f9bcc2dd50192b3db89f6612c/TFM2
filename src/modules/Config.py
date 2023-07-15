@@ -5,11 +5,11 @@ class ConfigParser:
         # Dictionary
         self.data = {}
         
-    def readFile(self, fileName) -> dict:
+    def readFile(self, fileName, readAsJson=True):
         with open(fileName, encoding="utf8") as F:
-            data = json.load(F)
-        return data
+            data = F.read()
+        return json.loads(data) if readAsJson == True else eval(data)
         
     def writeFile(self, fileName, fileContent) -> None:
         with open(fileName, "w", encoding="utf8") as F:
-            json.dump(fileContent, F)
+            json.dumps(fileContent, F)

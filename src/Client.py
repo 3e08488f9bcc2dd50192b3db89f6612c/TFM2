@@ -1,7 +1,7 @@
 import asyncio
 import random
 from src.modules import AntiCheat, ByteArray, Packets
-from src.utils import Utils
+from src.utils.Utils import Utils
 from src.utils.TFMCodes import TFMCodes
 
 class Client:
@@ -12,6 +12,7 @@ class Client:
 
         # Boolean
         self.isClosed = False
+        self.sendFlashPlayerNotice = False
         self.validatingVersion = False
 
         # Integer
@@ -21,10 +22,15 @@ class Client:
         # Float/Double
 
         # String
+        self.currentCaptcha = ""
         self.defaultLanguage = ""
         self.emailAddress = ""
+        self.flashPlayerVersion = ""
+        self.flashPlayerInformation = ""
         self.ipAddress = ""
         self.playerName = ""
+        self.osLanguage = ""
+        self.osVersion = ""
 
         # Dictionary
 
@@ -90,7 +96,10 @@ class Client:
                 self.loop.create_task(self.parsePacket(read))
             else:
                 self.clientPacket = old_packet
-                
+            
+    def eof_received(self) -> None:
+        return
+            
     async def parsePacket(self, packet) -> None:
         """
         Parse the given packet from the data receiving function.
@@ -107,15 +116,19 @@ class Client:
             await self.Packets.parsePacket(packet_id, C, CC, packet)
             
         except Exception as e:
+            self.server.sendStaffMessage(f"The player <BV>{self.playerName}<BV> made error in the system. Check erreur.log for more information.", 10, True)
             self.server.exceptionManager.setException(e)
-            self.server.exceptionManager.SaveException(self, "servererreur")
+            self.server.exceptionManager.SaveException(self, "serveur", "servererreur")
             
     def sendCorrectVersion(self, lang='en') -> None:
         self.sendPacket(TFMCodes.game.send.Correct_Version, ByteArray().writeInt(len(self.server.players)).writeUTF(lang).writeUTF('').writeInt(self.server.swfInfo["auth_key"]).writeBoolean(False).toByteArray())
-        self.sendPacket(TFMCodes.game.send.Banner_Login, ByteArray().writeByte(1).writeByte(2).writeShort(256).toByteArray())
-        self.sendPacket(TFMCodes.game.send.Image_Login, ByteArray().writeUTF('').toByteArray())
+        self.sendPacket(TFMCodes.game.send.Banner_Login, ByteArray().writeBoolean(True).writeByte(self.server.eventInfo["adventure_id"]).writeShort(256).toByteArray())
+        self.sendPacket(TFMCodes.game.send.Image_Login, ByteArray().writeUTF(self.server.eventInfo["adventure_img"]).toByteArray())
         self.sendPacket(TFMCodes.game.send.Verify_Code, ByteArray().writeInt(self.verifycoder).toByteArray())
-        self.sendPacket([100, 101], ByteArray().writeByte(1).writeBoolean(True).toByteArray())
         
-    def sendPacket(self, identifiers, data=b"") -> None: 
+    def sendServerMessage(self, message, tab=False) -> None:
+        self.sendPacket(TFMCodes.game.send.Server_Message, ByteArray().writeBoolean(tab).writeUTF(message).writeByte(0).writeUTF("").toByteArray())
+        
+    def sendPacket(self, identifiers, data=b"") -> None:
         self.loop.create_task(self.Packets.sendPacket(identifiers, data))
+

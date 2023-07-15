@@ -6,7 +6,7 @@ class AntiCheat:
         self.server = client.server
         self.info = self.server.antiCheatInfo
         
-    def getHackType(self, packet_id):
+    def getHackType(self, packet_id) -> str:
         """
         Receive the hack type by packet id
         """
@@ -19,7 +19,7 @@ class AntiCheat:
             
         return "Unknown"
         
-    def readPacket(self, packet):
+    def readPacket(self, packet) -> None:
         if packet in ["", " "]:
             return
             

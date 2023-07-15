@@ -1,4 +1,6 @@
-from src.utils import TFMCodes
+import random
+from src.utils.TFMCodes import TFMCodes
+from src.utils.Utils import Utils
 from src.modules import ByteArray
 
 class Packets:
@@ -16,8 +18,8 @@ class Packets:
         if not func: 
             return lambda x: self.packet(x, args)
         else:
-            if func.__name__ in dir(TFMCodes.TFMCodes.game.recv):
-                exec(f"self.ccc = TFMCodes.TFMCodes.game.recv.{func.__name__}")
+            if func.__name__ in dir(TFMCodes.game.recv):
+                exec(f"self.ccc = TFMCodes.game.recv.{func.__name__}")
                 self.packets[self.ccc[0] << 8 | self.ccc[1]] = [args,func]
 
     async def parsePacket(self, packetID, C, CC, packet):
@@ -36,8 +38,6 @@ class Packets:
             
     def receivePackets(self):
         """
-        Packet Info [28, 1]:
-        
         Information:
             Checks if swf details are correct before connect to the game.
         
@@ -45,66 +45,86 @@ class Packets:
             version - swf version
             lang - client language
             ckey - swf connection key
-            stand - additional argument for checking if client is using standalone.
+            stand_type - additional argument for checking if user is using standalone.
+            _reserved - reserved
+            flashPlayerInfo - User's flash information like hash, os name, os language, etc.
         """
-        @self.packet(args=['readShort', 'readUTF', 'readUTF', 'readUTF']) ###############
-        async def Correct_Version(self, version, lang, ckey, stand):
-            #if "StandAlone":
-                #self.sendServerMessage("[Anti-Cheat] The ip "+Utils.EncodeIP(self.ipAddress)+" is connected with standalone.")
-                #self.sendFlashWarning = True
+        @self.packet(args=['readShort', 'readUTF', 'readUTF', 'readUTF', 'readByte', 'readUTF'])
+        async def Correct_Version(self, version, lang, ckey, stand_type, _reserved, flashPlayerInfo):
+            self.flashPlayerInformation = flashPlayerInfo
+            if stand_type == "StandAlone":
+                self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}<BV> connected with standalone.", 6)
+                self.sendFlashPlayerNotice = True
             
             if ckey == self.server.swfInfo["ckey"] and version == int(self.server.swfInfo["version"]):
-                # if everything is okay
                 self.client.validatingVersion = True
                 self.client.sendCorrectVersion(lang)
             else:
                 print("[ERREUR] Invalid version or CKey (%s, %s) --> %s" %(version, ckey, self.client.ipAddress))
                 self.client.transport.close()
-        #  b'\x00\x01-\x00)\xd0\xfa\x00\x00\x00@b4c6ead5d714b2cadd3d7fa492d49122d577caa9e9b199c15484aec570668e55\x00\xe3A=t&SA=t&SV=t&EV=t&MP3=t&AE=t&VE=t&ACC=f&PR=t&SP=f&SB=f&DEB=f&V=WIN 32,0,0,324&M=Adobe Windows&R=1920x1080&COL=color&AR=1.0&OS=Windows 8&ARCH=x86&L=pt&IME=t&PR32=t&PR64=t&CAS=32&PT=StandAlone&AVD=f&LFD=f&WD=f&TLS=t&ML=5.1&DP=72\x00\x00\x00\x00\x00\x00\nm\x00\x00'
+
+        """
+        Information:
+            Receive most important computer information like os language, os name and flash version.
+            
+        Arguments:
+            osLanguage - User's operation system language code (iso2) like en, tr, pt, etc.
+            osName - User's operation system id like windows, linux and mac.
+            flashVersion - User's adobe flash version.
+        """
+        @self.packet(args=["readUTF", "readUTF", "readUTF"])
+        async def Computer_Information(self, osLanguage, osName, flashVersion):
+            self.osLanguage = osLanguage
+            self.osVersion = osName
+            self.flashPlayerVersion = flashVersion
         
         """
-        Packet Info [176, 1]:
-        
         Information:
-            Set given language in the game.
+            Gets a random captcha from the list in case when somebody is creating a new account.
+        
+        Arguments:
+            None
+        """
+        @self.packet
+        async def Get_Captcha(self):
+            self.client.currentCaptcha = random.choice(list(self.server.captchaList))
+            self.client.sendPacket(TFMCodes.game.send.Set_Captcha, self.server.captchaList[self.client.currentCaptcha][0])
+        
+        """
+        Information:
+            Receive the 2-iso language code and set it in the client.
         
         Arguments:
             lang - received language
         """
         @self.packet(args=['readUTF'])
-        async def Set_Language(self, langue):
-            langue = langue.upper()
-            self.client.defaultLanguage = langue
+        async def Get_Language(self, langue):
+            self.client.defaultLanguage = langue.lower()
             if "-" in self.client.defaultLanguage:
                 self.client.defaultLanguage = self.client.defaultLanguage.split("-")[1]
-            self.client.sendPacket(TFMCodes.TFMCodes.game.send.Set_Language, ByteArray().writeUTF(langue).writeUTF(self.server.serverLanguagesInfo.get(self.client.defaultLanguage.lower())[1]).writeShort(0).writeBoolean(False).writeBoolean(True).writeUTF('').toByteArray())
+            self.client.sendPacket(TFMCodes.game.send.Set_Language, ByteArray().writeUTF(langue).writeUTF(self.server.serverLanguagesInfo.get(self.client.defaultLanguage)[2]).writeBoolean(False).writeBoolean(True).writeUTF('').toByteArray())
 
         """
-        Packet Info [176, 2]:
-        
         Information:
-            Send given languages in the server.
+            Send all languages on the server.
         
         Arguments:
             None
         """
         @self.packet
         async def Language_List(self):
-            data = ByteArray().writeShort(1).writeUTF(self.client.defaultLanguage.lower())
-            for info in self.server.serverLanguagesInfo.get(self.client.defaultLanguage.lower()):
-                data.writeUTF(info)
+            data = ByteArray().writeUnsignedShort(len(self.server.serverLanguagesInfo)).writeUTF(self.client.defaultLanguage)
+            data.writeUTF(self.server.serverLanguagesInfo[self.client.defaultLanguage][1])
+            data.writeUTF(self.server.serverLanguagesInfo[self.client.defaultLanguage][0])
+                
+            for info in self.server.serverLanguagesInfo:
+                if info != self.client.defaultLanguage:
+                    data.writeUTF(self.server.serverLanguagesInfo[info][0])
+                    data.writeUTF(self.server.serverLanguagesInfo[info][1])
+                    data.writeUTF(self.server.serverLanguagesInfo[info][0])
+            self.client.sendPacket(TFMCodes.game.send.Language_List, data.toByteArray())
 
-            data.writeUTF("za")
-            data.writeUTF("Afrikaans")
-            data.writeUTF("za")
-            """for info in self.server.languages:
-                if info[0] != self.client.langue.lower():
-                    data.writeUTF(info[0])
-                    data.writeUTF(info[1])
-                    data.writeUTF(info[2])
-            """
-            self.client.sendPacket(Identifiers.send.Language_List, data.toByteArray())
-        
+
     async def sendPacket(self, identifiers, data=b""):
         if self.client.isClosed:
             return
@@ -131,7 +151,5 @@ class Packets:
             calc1 = calc1 >> 7
             
         packet2.writeByte((length & 127))
-
-        print(str(packet2.getBytes()) + "\n" + str(packet.getBytes()) + "\n" + str(data))
         packet.writeBytes(packet2.toByteArray()).writeByte(identifiers[0]).writeByte(identifiers[1]).writeBytes(data)
         self.client.transport.write(packet.toByteArray())

@@ -9,5 +9,10 @@
 	"minimum_players": 11,
 	"minimum_normal_saves": 1000,
 	"minimum_hard_saves": 500,
-	"minimum_hours": 24
+	"minimum_hours": 24,
+	
+	"api": "127.0.0.1:6969",
+	"apikeys": [
+		"admin_key"
+	]
 }
