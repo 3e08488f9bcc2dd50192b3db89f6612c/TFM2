@@ -5,18 +5,22 @@ from src.utils.Utils import Utils
 from src.utils.TFMCodes import TFMCodes
 
 class Client:
-    def __init__(self, _server):
+    def __init__(self, _server, _cursor):
         # Istances
         self.server = _server
+        self.Cursor = _cursor
         self.clientPacket = ByteArray()
 
         # Boolean
         self.isClosed = False
+        self.isGuest = False
         self.sendFlashPlayerNotice = False
         self.validatingVersion = False
 
         # Integer
         self.lastPacketID = 0
+        self.playerCode = 0
+        self.privLevel = 0
         self.verifycoder = random.choice(range(0, 10000))
 
         # Float/Double
@@ -28,9 +32,10 @@ class Client:
         self.flashPlayerVersion = ""
         self.flashPlayerInformation = ""
         self.ipAddress = ""
-        self.playerName = ""
         self.osLanguage = ""
         self.osVersion = ""
+        self.playerName = ""
+        self.swfUrl = ""
 
         # Dictionary
 
@@ -40,8 +45,9 @@ class Client:
         self.loop = asyncio.get_event_loop()
         
         # Other
+        self.awakeTimer = None
         self.transport = None
-        
+         
     def connection_made(self, transport: asyncio.Transport) -> None: ##########
         """
         Make connection between client and server.
@@ -114,14 +120,36 @@ class Client:
             self.lastPacketID = packet_id
             self.AntiCheat.readPacket(C + CC)
             await self.Packets.parsePacket(packet_id, C, CC, packet)
-            
         except Exception as e:
-            self.server.sendStaffMessage(f"The player <BV>{self.playerName}<BV> made error in the system. Check erreur.log for more information.", 10, True)
+            self.server.sendStaffMessage(f"The player <BV>{self.playerName}<BV> made error in the system. Check erreur.log for more information.", 9, True)
             self.server.exceptionManager.setException(e)
             self.server.exceptionManager.SaveException(self, "serveur", "servererreur")
+
+
+
+    async def loginPlayer(self, playerName, password, startRoom) -> None: ##########
+        """
+        Function that handle login.
+        """
+        pass
+
+    def checkBanInfo(self):
+        """
+        Checks if player is banned.
+        """
+        pass
+
+    def checkTimeAccount(self):
+        """
+        Checks the time about playerName creates new account.
+        """
+        pass
+                        
+    def sendAccountTime(self):
+        pass
             
     def sendCorrectVersion(self, lang='en') -> None:
-        self.sendPacket(TFMCodes.game.send.Correct_Version, ByteArray().writeInt(len(self.server.players)).writeUTF(lang).writeUTF('').writeInt(self.server.swfInfo["auth_key"]).writeBoolean(False).toByteArray())
+        self.sendPacket(TFMCodes.game.send.Correct_Version, ByteArray().writeUnsignedInt(len(self.server.players)).writeUTF(lang).writeUTF('').writeInt(self.server.swfInfo["auth_key"]).writeBoolean(False).toByteArray())
         self.sendPacket(TFMCodes.game.send.Banner_Login, ByteArray().writeBoolean(True).writeByte(self.server.eventInfo["adventure_id"]).writeShort(256).toByteArray())
         self.sendPacket(TFMCodes.game.send.Image_Login, ByteArray().writeUTF(self.server.eventInfo["adventure_img"]).toByteArray())
         self.sendPacket(TFMCodes.game.send.Verify_Code, ByteArray().writeInt(self.verifycoder).toByteArray())
@@ -131,4 +159,3 @@ class Client:
         
     def sendPacket(self, identifiers, data=b"") -> None:
         self.loop.create_task(self.Packets.sendPacket(identifiers, data))
-

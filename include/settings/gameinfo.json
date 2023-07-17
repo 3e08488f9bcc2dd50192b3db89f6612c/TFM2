@@ -1,10 +1,24 @@
 {
 	"game_name" : "Transformice",
+	"game_ip": "127.0.0.1",
+	"game_ports": [11801,12801,13801,14801],
 	"server_debug": true,
 	"maximum_players": 4096,
 	
-	"initial_cheese": 0,
+	"flash_url": "",
+	
+	"initial_shopcheese": 0,
 	"initial_strawberries": 0,
+	"initial_firsts": 0,
+	"initial_cheeses": 0,
+	"initial_shamanCheeses": 0,
+	"initial_bootcamp": 0,
+	"initial_normal_saves": 0,
+	"initial_normal_saves_no_skill": 0,
+	"initial_hard_saves": 0,
+	"initial_hard_saves_no_skill": 0,
+	"initial_divine_saves": 0,
+	"initial_divine_saves_no_skill": 0,
 	
 	"minimum_players": 11,
 	"minimum_normal_saves": 1000,
@@ -12,7 +26,9 @@
 	"minimum_hours": 24,
 	
 	"api": "127.0.0.1:6969",
-	"apikeys": [
-		"admin_key"
-	]
+	"apikeys": ["admin_key"],
+	
+	"db": "127.0.0.1:27017",
+	"db_username": "root",
+	"db_password": ""
 }

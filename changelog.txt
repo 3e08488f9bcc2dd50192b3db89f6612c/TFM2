@@ -1,0 +1,11 @@
+Bugs Found:
+[-] Languages er and kg are not found.
+
+
+New:
+[+] To prevent email spamming you can add only 5 accounts in one email address.
+
+
+Finished:
+[+] Languages - 100%
+[+] Account registration - 100%

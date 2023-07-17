@@ -1,5 +1,9 @@
 import asyncio
 import psutil
+import pymongo
+import random
+import re
+import string
 from api.Api import Api
 from colorconsole import win
 from src import Client
@@ -9,6 +13,7 @@ from src.modules import Config, Exceptions
 class Server(asyncio.Transport):
     def __init__(self):
         # Integer
+        self.lastPlayerID = 0
     
         # Float/Double
     
@@ -27,7 +32,8 @@ class Server(asyncio.Transport):
         # Other
         self.config = Config.ConfigParser()
         self.exceptionManager = Exceptions.ServeurException()
-        self.api = None
+        #self.api = None
+        self.Cursor = None
                 
         # Informations
         self.antiCheatInfo = self.config.readFile("./include/settings/anticheat.json")
@@ -36,6 +42,24 @@ class Server(asyncio.Transport):
         self.serverInfo = self.config.readFile("./include/settings/gameinfo.json")
         self.serverLanguagesInfo = self.config.readFile("./include/settings/languages.json")
         self.swfInfo = self.config.readFile("./include/settings/swf_properties.json")
+        self.titleInfo = self.config.readFile("./include/settings/titles.json", False)
+
+    def checkAlreadyExistingGuest(self, playerName):
+        playerName = re.sub('[^0-9a-zA-Z]+', '', playerName)
+        if len(playerName) == 0 or self.checkConnectedUser("*" + playerName):
+            playerName = "*Souris_%s" %("".join([random.choice(string.ascii_lowercase) for x in range(4)]))
+        else:
+            playerName = "*" + playerName
+        return playerName
+
+    def checkConnectedUser(self, playerName):
+        return playerName in self.players
+    
+    def checkExistingUser(self, playerName):
+        return self.Cursor['users'].find_one({'Username':playerName}) != None
+        
+    def getEmailAddressCount(self, emailAddress):
+        return len(list(self.Cursor['users'].find({'Email':emailAddress})))
 
     def sendConnectionInformation(self) -> None:
         """
@@ -48,10 +72,13 @@ class Server(asyncio.Transport):
         T.cprint(1,  0,  f"{self.serverInfo['server_debug']}\n")
         
         T.cprint(15, 0, "[#] Initialized ports: ")
-        T.cprint(10, 0, f"{self.swfInfo['ports']}\n")
+        T.cprint(10, 0, f"{self.serverInfo['game_ports']}\n")
         
         T.cprint(15, 0, "[#] Server Name: ")
         T.cprint(12, 0, f"{self.serverInfo['game_name']}\n")
+        
+        T.cprint(15, 0, "[#] Server IP: ")
+        T.cprint(13, 0, f"{self.serverInfo['game_ip']}\n")
         if self.serverInfo["server_debug"]:
             T.cprint(15, 0, "[#] Server Version: ")
             T.cprint(14, 0, f"1.{self.swfInfo['version']}\n")
@@ -90,12 +117,17 @@ class Server(asyncio.Transport):
             if client.privLevel >= minLevel:
                 player.sendServerMessage(message, tab)
 
-    def startServer(self) -> None:##########
+    def startServer(self) -> None:
         """
         Obviously
         """
-        for port in self.swfInfo["ports"]:
-            self.loop.run_until_complete(self.loop.create_server(lambda: Client.Client(self), "127.0.0.1", port))
+        if self.serverInfo["db_password"] != "":
+            self.Cursor = pymongo.MongoClient(f"mongodb://{self.serverInfo['db_username']}:{self.serverInfo['db_password']}@{self.serverInfo['db']}")['transformice']
+        else:
+            self.Cursor = pymongo.MongoClient(f"mongodb://{self.serverInfo['db']}")['transformice']
+        
+        for port in self.serverInfo["game_ports"]:
+            self.loop.run_until_complete(self.loop.create_server(lambda: Client.Client(self, self.Cursor), self.serverInfo["game_ip"], port))
         
         self.sendConnectionInformation()
         self.loop.run_forever()

@@ -1,3 +1,4 @@
+import time
 from src.modules import ByteArray
 
 class Utils:
@@ -23,3 +24,7 @@ class Utils:
     def DecodeIP(ip):
         ip = ip[1:]
         return '.'.join([hex(int(x)+256)[3:].upper() for x in ip.split('.')])
+        
+    @staticmethod
+    def getTime():
+        return int(int(str(time.time())[:10]))
