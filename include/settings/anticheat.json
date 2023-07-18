@@ -1,5 +1,6 @@
 {
-	"allowed_packets": [29, 33, 34, 45, 46, 52, 177, 178, 223],
+	"allowed_packets": [29, 33, 34, 45, 46, 52, 66, 70, 71, 73, 74, 75, 76, 153, 154, 177, 223],
+	"staff_packets": [77, 78, 155, 164],
 	"suspicious_packets": [],
-	"ban_time": 360
+	"ban_time": 24
 }

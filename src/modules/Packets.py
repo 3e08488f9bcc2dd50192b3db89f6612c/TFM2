@@ -1,5 +1,6 @@
 import random
 import re
+import time
 from src.utils.TFMCodes import TFMCodes
 from src.utils.Utils import Utils
 from src.modules import ByteArray
@@ -55,7 +56,7 @@ class Packets:
             """
             self.flashPlayerInformation = flashPlayerInfo
             if stand_type == "StandAlone":
-                self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}<BV> connected with standalone.", 7)
+                self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}</BV> connected with standalone.", 7)
                 self.sendFlashPlayerNotice = True
             
             if ckey == self.server.swfInfo["ckey"] and version == int(self.server.swfInfo["version"]):
@@ -108,6 +109,7 @@ class Packets:
                     if self.server.checkExistingUser(playerName):
                         self.client.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(3).writeUTF("").writeUTF("").toByteArray())
                     else:
+                        self.server.Cursor["config"].update_one({"lastPlayerID":self.server.lastPlayerID}, {'$inc': {'lastPlayerID': 1}})
                         self.server.lastPlayerID += 1
                         self.Cursor['users'].insert_one({
                             "Username":playerName,
@@ -185,13 +187,35 @@ class Packets:
                             "Roles":""
                         })
                         await self.client.loginPlayer(playerName, password, "\x03[Tutorial] %s" %(playerName))
-                        self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}<BV> registered account with name <J>{playerName}</J> and email address <VP>{email}</VP>.", 9)
+                        self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}</BV> registered account with name <J>{playerName}</J> and email address <VP>{email}</VP>.", 9)
             
             except Exception as e:
                 self.client.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(6).writeUTF("").writeUTF("").toByteArray())
-                self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}<BV> made error in the system. Check serveur.log for more information.", 9, True)
+                self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}</BV> made error in the system. Check serveur.log for more information.", 9, True)
                 self.server.exceptionManager.setException(e)
                 self.server.exceptionManager.SaveException(self.client, "serveur", "packeterreur")
+        
+        @self.packet(args=['readInt', 'readUTF'])
+        async def Create_New_Cafe_Post(self, topicID, message):
+            await self.client.Cafe.createNewCafePost(topicID, message)
+
+        @self.packet(args=['readUTF', 'readUTF'])
+        async def Create_New_Cafe_Topic(self, message, title):
+            await self.client.Cafe.createNewCafeTopic(message, title)
+        
+        @self.packet(args=['readInt', 'readBoolean'])
+        async def Check_Cafe_Topic(self, topicID, delete):
+            await self.client.Cafe.ModerateTopic(topicID, delete)
+        
+        @self.packet(args=['readInt', 'readUTF'])
+        async def Delete_All_Cafe_Message(self, topicID, playerName):
+            if self.client.privLevel >= 7:
+                await self.client.Cafe.deleteAllCafePost(topicID, playerName)
+
+        @self.packet(args=['readInt'])
+        async def Delete_Cafe_Message(self, postID):
+            if self.client.privLevel >= 7:
+                await self.client.Cafe.deleteCafePost(postID)
         
         @self.packet
         async def Dummy(self):
@@ -201,6 +225,19 @@ class Packets:
             if self.client.awakeTimer != None: 
                 self.client.awakeTimer.cancel()
             self.client.awakeTimer = self.server.loop.call_later(120, self.client.transport.close)
+        
+        @self.packet(args=['readByte', 'readByte', 'readUnsignedByte', 'readUnsignedByte', 'readUTF'])
+        async def Game_Log(self, errorC, errorCC, oldC, oldCC, error):
+            if errorC == 1 and errorCC == 1:
+                print(f"[{time.strftime('%H:%M:%S')}] [{self.client.playerName}][OLD] GameLog Error - C: {oldC} CC: {oldCC} error: {error}")
+            elif errorC == 60:
+                print(f"[{time.strftime('%H:%M:%S')}] [{self.client.playerName}][TRIBULLE] GameLog Error - Code: {oldC} error: {error}")
+            else:
+                print(f"[{time.strftime('%H:%M:%S')}] [{self.client.playerName}][PAQUET] GameLog Error - C: {errorC} CC: {errorCC} error: {error}")
+        
+        @self.packet
+        async def Get_Cafe_Warnings(self):
+            await self.client.Cafe.sendCafeWarnings()
         
         @self.packet
         async def Get_Captcha(self):
@@ -224,6 +261,7 @@ class Packets:
                 lang - received language
             """
             self.client.defaultLanguage = langue.lower()
+            self.client.defaultLanguageID = Utils.getLangueID(self.client.defaultLanguage)
             if "-" in self.client.defaultLanguage:
                 self.client.defaultLanguage = self.client.defaultLanguage.split("-")[1]
             self.client.sendPacket(TFMCodes.game.send.Set_Language, ByteArray().writeUTF(langue).writeUTF(self.server.serverLanguagesInfo.get(self.client.defaultLanguage)[2]).writeBoolean(False).writeBoolean(True).writeUTF('').toByteArray())
@@ -269,10 +307,10 @@ class Packets:
                     _local2 ^= i
                     
                 if _local2 != authKey and len(_local1) > 0:
-                    self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}<BV> tried login using bot like aiotfm.", 8)
+                    self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}</BV> tried login using bot like aiotfm.", 8)
                     self.client.transport.close()
                 elif not _local3 in url and len(_local3) > 0:
-                    self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}<BV> tried login with invalid swf url.", 9)
+                    self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}</BV> tried login with invalid swf url.", 9)
                     self.client.transport.close()
                 else:
                     self.client.swfUrl = url
@@ -282,9 +320,43 @@ class Packets:
                         await self.client.loginPlayer(playerName, password, startRoom)
             except Exception as e:
                 self.client.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(6).writeUTF(playerName).writeUTF("").toByteArray())
-                self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}<BV> made error in the system. Check serveur.log for more information.", 9, True)
+                self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}</BV> made error in the system. Check serveur.log for more information.", 9, True)
                 self.server.exceptionManager.setException(e)
                 self.server.exceptionManager.SaveException(self.client, "serveur", "packeterreur")
+
+        @self.packet(args=['readBoolean'])
+        async def Open_Cafe(self, _isopen):
+            self.client.isCafeOpen = _isopen
+
+        @self.packet(args=['readInt'])
+        async def Open_Cafe_Topic(self, topicID):
+            await self.client.Cafe.openCafeTopic(topicID)
+
+        @self.packet
+        async def Reload_Cafe(self):
+            if not self.client.isReloadCafe:
+                await self.client.Cafe.loadCafeMode()
+                self.client.isReloadCafe = True
+                self.server.loop.call_later(2, setattr, self.client, "isReloadCafe", False)
+
+        @self.packet(args=['readInt', 'readInt'])
+        async def Report_Cafe_Post(self, PostID, TopicID):
+            await self.client.Cafe.ReportCafePost(TopicID, PostID)
+
+        @self.packet(args=['readShort'])
+        async def Tribulle(self, code): 
+            if self.client.isGuest:
+                return
+            self.client.tribulle.parseTribulleCode(code, self.packet)
+
+        @self.packet(args=['readUTF'])
+        async def View_Cafe_Posts(self, playerName):
+            await self.client.Cafe.ViewCafePosts(playerName)
+
+        @self.packet(args=['readInt', 'readInt', 'readBoolean'])
+        async def Vote_Cafe_Post(self, topicID, postID, mode):
+            await self.client.Cafe.voteCafePost(topicID, postID, mode)
+
 
     async def sendPacket(self, identifiers, data=b""):
         if self.client.isClosed:

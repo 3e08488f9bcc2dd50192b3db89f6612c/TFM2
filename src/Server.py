@@ -2,6 +2,7 @@ import asyncio
 import psutil
 import pymongo
 import random
+import os
 import re
 import string
 from api.Api import Api
@@ -14,6 +15,8 @@ class Server(asyncio.Transport):
     def __init__(self):
         # Integer
         self.lastPlayerID = 0
+        self.lastCafeTopicID = 0
+        self.lastCafePostID = 0
     
         # Float/Double
     
@@ -23,6 +26,7 @@ class Server(asyncio.Transport):
         self.rooms = {}
         self.players = {}
         self.connectedCounts = {}
+        self.moderatedCafeTopics = {}
         
         # List
 
@@ -37,6 +41,8 @@ class Server(asyncio.Transport):
                 
         # Informations
         self.antiCheatInfo = self.config.readFile("./include/settings/anticheat.json")
+        self.badIPS = self.config.readFile("./include/settings/bad_ips.json")
+        self.badWords = self.config.readFile("./include/settings/bad_words.json")
         self.captchaList = self.config.readFile("./include/settings/captchas.json", False)
         self.eventInfo = self.config.readFile("./include/settings/event.json")
         self.serverInfo = self.config.readFile("./include/settings/gameinfo.json")
@@ -58,8 +64,44 @@ class Server(asyncio.Transport):
     def checkExistingUser(self, playerName):
         return self.Cursor['users'].find_one({'Username':playerName}) != None
         
+    def checkMessage(self, message):
+        i = 0
+        while i < len(self.badWords):
+            if re.search("[^a-zA-Z]*".join(self.badWords[i]), message.lower()):
+                return True
+            i += 1
+        return False
+
+    def getBanInfo(self, playerName):
+        rs = self.Cursor['usertempban'].find_one({'Username':playerName})
+        if rs:
+            return [rs["Reason"], rs["Time"]]
+        else:
+            return ["", 0]
+
     def getEmailAddressCount(self, emailAddress):
         return len(list(self.Cursor['users'].find({'Email':emailAddress})))
+
+    def getConfigID(self, config_id):
+        try:
+            r1 = self.Cursor['config'].find()
+            return r1[0][config_id]
+        except:
+            print(f"[ERREUR] Unable to find the game config. Are you sure you added it to mongodb? Unable to find {config_id}")
+            exit(0)
+
+    def getPlayerID(self, playerName):
+        if playerName in self.players:
+            return self.players[playerName].playerID
+        else:
+            rs = self.Cursor['users'].find_one({'Username':playerName})
+            if rs:
+                return rs['PlayerID']
+            else:
+                return -1
+
+    def sendBanPunishment(self, playerName, hours, reason, modName, silent=False): #########
+        pass
 
     def sendConnectionInformation(self) -> None:
         """
@@ -115,7 +157,7 @@ class Server(asyncio.Transport):
         """
         for client in self.players.copy().values():
             if client.privLevel >= minLevel:
-                player.sendServerMessage(message, tab)
+                client.sendServerMessage(message, tab)
 
     def startServer(self) -> None:
         """
@@ -125,6 +167,11 @@ class Server(asyncio.Transport):
             self.Cursor = pymongo.MongoClient(f"mongodb://{self.serverInfo['db_username']}:{self.serverInfo['db_password']}@{self.serverInfo['db']}")['transformice']
         else:
             self.Cursor = pymongo.MongoClient(f"mongodb://{self.serverInfo['db']}")['transformice']
+        
+        self.lastPlayerID = self.getConfigID("lastPlayerID")
+        self.lastCafeTopicID = self.getConfigID("lastCafeTopicID") # OK
+        self.lastCafePostID = self.getConfigID("lastCafePostID") # OK
+        
         
         for port in self.serverInfo["game_ports"]:
             self.loop.run_until_complete(self.loop.create_server(lambda: Client.Client(self, self.Cursor), self.serverInfo["game_ip"], port))
