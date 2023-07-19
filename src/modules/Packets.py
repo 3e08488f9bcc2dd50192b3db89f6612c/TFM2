@@ -231,7 +231,7 @@ class Packets:
             if errorC == 1 and errorCC == 1:
                 print(f"[{time.strftime('%H:%M:%S')}] [{self.client.playerName}][OLD] GameLog Error - C: {oldC} CC: {oldCC} error: {error}")
             elif errorC == 60:
-                print(f"[{time.strftime('%H:%M:%S')}] [{self.client.playerName}][TRIBULLE] GameLog Error - Code: {oldC} error: {error}")
+                print(f"[{time.strftime('%H:%M:%S')}] [{self.client.playerName}][TRIBULLE] GameLog Error - Code: {oldCC}-{oldC} error: {error}")
             else:
                 print(f"[{time.strftime('%H:%M:%S')}] [{self.client.playerName}][PAQUET] GameLog Error - C: {errorC} CC: {errorCC} error: {error}")
         
@@ -324,6 +324,31 @@ class Packets:
                 self.server.exceptionManager.setException(e)
                 self.server.exceptionManager.SaveException(self.client, "serveur", "packeterreur")
 
+        @self.packet(args=['readUTF'])
+        async def New_Survey(self, description):
+            if self.client.privLevel != 9:
+                return
+            description = '[' + description + ']'
+            options = []
+            while self.packet.bytesAvailable():
+                options.append(self.packet.readUTF())
+            if len(options) > 0:
+                packet1 = ByteArray()
+                packet2 = ByteArray()
+                packet1.writeInt(self.client.playerID).writeUTF("").writeBoolean(False).writeUTF(description)
+                packet2.writeInt(1).writeUTF("").writeBoolean(False).writeUTF(description)
+                for option in options:
+                    packet1.writeUTF(option)
+                    packet2.writeUTF(option)
+              
+                for player in self.server.players.copy().values():
+                    if player.defaultLanguage == self.client.defaultLanguage:
+                        player.sendPacket(TFMCodes.game.send.Survey, packet1.toByteArray())
+                    else:
+                        player.sendPacket(TFMCodes.game.send.Survey, packet2.toByteArray())
+            else:
+                self.client.sendServerMessage("Your survey must require one valid option.", True)
+
         @self.packet(args=['readBoolean'])
         async def Open_Cafe(self, _isopen):
             self.client.isCafeOpen = _isopen
@@ -337,17 +362,43 @@ class Packets:
             if not self.client.isReloadCafe:
                 await self.client.Cafe.loadCafeMode()
                 self.client.isReloadCafe = True
-                self.server.loop.call_later(2, setattr, self.client, "isReloadCafe", False)
+                self.server.loop.call_later(1, setattr, self.client, "isReloadCafe", False)
 
         @self.packet(args=['readInt', 'readInt'])
         async def Report_Cafe_Post(self, PostID, TopicID):
             await self.client.Cafe.ReportCafePost(TopicID, PostID)
+            
+        @self.packet
+        async def Request_Info(self):
+            self.client.sendPacket(TFMCodes.game.send.Request_Info, ByteArray().writeUTF("http://localhost/info.php").toByteArray())
+            
+        @self.packet(args=['readInt', 'readByte'])
+        async def Survey_Answer(self, playerID, optionID):
+            for player in self.server.players.copy().values():
+                if playerID == player.playerID:
+                    player.sendPacket(TFMCodes.game.send.Survey_Answer, ByteArray().writeByte(optionID).toByteArray())
 
+        @self.packet(args=['readUTF'])
+        async def Survey_Result(self, description):
+            if self.client.privLevel != 9:
+                return
+            options = []
+            while self.packet.bytesAvailable():
+                options.append(self.packet.readUTF())
+            p = ByteArray()
+            p.writeInt(0).writeUTF("").writeBoolean(False).writeUTF(description)
+            for result in options:
+                p.writeUTF(result)
+            
+            for player in self.server.players.copy().values():
+                if player.defaultLanguage == self.client.defaultLanguage and player.playerName != self.client.playerName:
+                    player.sendPacket(TFMCodes.game.send.Survey, p.toByteArray())
+        
         @self.packet(args=['readShort'])
         async def Tribulle(self, code): 
             if self.client.isGuest:
                 return
-            self.client.tribulle.parseTribulleCode(code, self.packet)
+            self.client.Tribulle.parseTribulleCode(code, self.packet)
 
         @self.packet(args=['readUTF'])
         async def View_Cafe_Posts(self, playerName):

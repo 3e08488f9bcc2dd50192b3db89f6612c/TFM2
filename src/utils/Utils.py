@@ -18,7 +18,10 @@ class Utils:
                 
     @staticmethod
     def getLangueID(langue) -> int:
-        return 1
+        langues = {"en": 1, "fr":2, "ru":3, "br":4, "es":5, "tr":7, "vk":8, "pl":9, "hu":10, "nl":11, "ro":12, "id":13, "de":14, "gb":15, "sa":16, "ph":17, "lt":18, "jp":19, "cn":20, "fi":21, "cz":22, "hr":23, "sk":24, "bg":25, "lv":26, "il":27, "it":28, "ee":29, "az":30, "pt":31}
+        if not langue in langues:
+            return 1 # INTERNATIONALE
+        return langues[langue]
                 
     @staticmethod
     def EncodeIP(ip) -> str:

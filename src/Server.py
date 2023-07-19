@@ -17,18 +17,23 @@ class Server(asyncio.Transport):
         self.lastPlayerID = 0
         self.lastCafeTopicID = 0
         self.lastCafePostID = 0
+        self.lastChatID = 0
     
         # Float/Double
     
         # String
     
         # Dictionary
-        self.rooms = {}
-        self.players = {}
+        self.chatMessages = {}
+        self.chats = {}
         self.connectedCounts = {}
         self.moderatedCafeTopics = {}
+        self.rooms = {}
+        self.players = {}
         
         # List
+        self.userBanCache = []
+        self.userMuteCache = []
 
         # Loops
         self.loop = asyncio.get_event_loop()
@@ -51,6 +56,9 @@ class Server(asyncio.Transport):
         self.titleInfo = self.config.readFile("./include/settings/titles.json", False)
 
     def checkAlreadyExistingGuest(self, playerName):
+        """
+        Checks if guest with given name exist and generate a new name if exist.
+        """
         playerName = re.sub('[^0-9a-zA-Z]+', '', playerName)
         if len(playerName) == 0 or self.checkConnectedUser("*" + playerName):
             playerName = "*Souris_%s" %("".join([random.choice(string.ascii_lowercase) for x in range(4)]))
@@ -59,12 +67,21 @@ class Server(asyncio.Transport):
         return playerName
 
     def checkConnectedUser(self, playerName):
+        """
+        Checks if user is online.
+        """
         return playerName in self.players
     
     def checkExistingUser(self, playerName):
+        """
+        Checks if user exist in the database.
+        """
         return self.Cursor['users'].find_one({'Username':playerName}) != None
         
     def checkMessage(self, message):
+        """
+        Checks if message contains any bad word.
+        """
         i = 0
         while i < len(self.badWords):
             if re.search("[^a-zA-Z]*".join(self.badWords[i]), message.lower()):
@@ -73,6 +90,9 @@ class Server(asyncio.Transport):
         return False
 
     def getBanInfo(self, playerName):
+        """
+        Get additional information about playerName's ban.
+        """
         rs = self.Cursor['usertempban'].find_one({'Username':playerName})
         if rs:
             return [rs["Reason"], rs["Time"]]
@@ -80,6 +100,9 @@ class Server(asyncio.Transport):
             return ["", 0]
 
     def getEmailAddressCount(self, emailAddress):
+        """
+        Get total count of players with same email address.
+        """
         return len(list(self.Cursor['users'].find({'Email':emailAddress})))
 
     def getConfigID(self, config_id):
@@ -90,7 +113,20 @@ class Server(asyncio.Transport):
             print(f"[ERREUR] Unable to find the game config. Are you sure you added it to mongodb? Unable to find {config_id}")
             exit(0)
 
+    def getMuteInfo(self, playerName):
+        """
+        Get additional information about playerName's mute.
+        """
+        rs = self.Cursor['usertempmute'].find_one({'Username':playerName})
+        if rs:
+            return [rs['Reason'], rs['Time']]
+        else:
+            return ["", 0]
+
     def getPlayerID(self, playerName):
+        """
+        Receive the player id.
+        """
         if playerName in self.players:
             return self.players[playerName].playerID
         else:
@@ -99,6 +135,22 @@ class Server(asyncio.Transport):
                 return rs['PlayerID']
             else:
                 return -1
+
+    def removeBan(self, playerName):
+        """
+        Removes ban on given player.
+        """
+        if playerName in self.userBanCache:
+            self.userBanCache.remove(playerName)
+        self.Cursor['usertempban'].delete_one({'Username':playerName})
+    
+    def removeMute(self, playerName):
+        """
+        Removes mute on given player.
+        """
+        if playerName in self.userMuteCache:
+            self.userMuteCache.remove(playerName)
+        self.Cursor['usertempmute'].delete_one({'Username':playerName})
 
     def sendBanPunishment(self, playerName, hours, reason, modName, silent=False): #########
         pass
