@@ -1,11 +1,39 @@
 Bugs Found:
-[-] Languages er and kg are not found.
-
+- Languages er and kg are not found.
+- Problems with friend's list
 
 New:
-[+] To prevent email spamming you can add only 5 accounts in one email address.
+- To prevent email spamming you can add only 5 accounts in one email address.
+- Added security in staff packets.
+- Reports in cafe are functional.
+- View player's messages in cafe is functional.
 
+Fixed:
+- Fixed bug with email address.
+- Player name can be email when login with email address.
+- Fixed problem with cafe where player can see topics and posts from different community.
+- Fixed problem where delete cafe posts does not work property.
+- Fixed bug when registering player his name is invisible in cafe.
+- Fixed bug in cafe with lastCafeTopic and lastCafePost.
+- Fixed exploit in cafe where is possible to vote on empty post.
+- Fixed exploit where ban players can bypass their punishment. (When connecting)
+- Fixed exploit where guest can use tribulle.
+- Fixed when player can spam the lastChatID identifier.
+- Fixed bug when player can't chat in their default community chat.
+- Fixed problem with chat communities.
+- Fixed bug where it doesn't appear the disconnected player when you whisper him.
+- Fixed bug where when you send whisper message and you are muted gives error.
+- Fixed bug where muted players can speak in custom chats.
+- Fixed problem with silence whisper.
+- Fixed problem with connected and disconnected message for friends.
+- Problem with default chats where players can't see their messages.
+- Fixed problem with whisper messages.
 
 Finished:
-[+] Languages - 100%
 [+] Account registration - 100%
+[+] Cafe - 100%
+[+] Languages - 100%
+[+] Surveys - 100%
+[+] Login - 7%
+[+] Punishments - 5%
+[+] Tribulle - 50%
