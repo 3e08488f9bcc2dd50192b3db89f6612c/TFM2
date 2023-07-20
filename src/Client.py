@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import random
 import time
-from src.modules import AntiCheat, ByteArray, Cafe, Commands, DailyQuests, ModoPwet, Packets, Shop, Skills, Tribulle
+from src.modules import AntiCheat, ByteArray, Cafe, Commands, DailyQuests, Exceptions, ModoPwet, Packets, Shop, Skills, Tribulle
 from src.utils.Utils import Utils
 from src.utils.TFMCodes import TFMCodes
 
@@ -21,8 +21,9 @@ class Client:
         self.isGuest = False
         self.isLuaCrew = False
         self.isMapCrew = False
-        self.isMute = False
+        self.isMuted = False
         self.isReloadCafe = False
+        self.isTribeOpen = False
         self.sendFlashPlayerNotice = False
         self.sendPunishmentPopup = False
         self.openingFriendList = False
@@ -66,6 +67,7 @@ class Client:
         self.silenceType = 0
         self.titleID = 0
         self.tribeCode = 0
+        self.tribeChat = 0
         self.tribeJoined = 0
         self.tribeHouse = 0
         self.tribeRank = 0
@@ -124,12 +126,16 @@ class Client:
         self.friendsList = []
         self.hardModeTitleList = []
         self.ignoredsList = []
+        self.ignoredMarriageInvites = []
+        self.ignoredTribeInvites = []
+        self.marriageInvite = []
         self.playerRoles = []
         self.racingStats = [0, 0, 0, 0]
         self.shamanTitleList = []
         self.shopTitleList = []
         self.staffTitleList = []
         self.survivorStats = [0, 0, 0, 0]
+        self.tribeInvite = []
 
         # Loops
         self.loop = asyncio.get_event_loop()
@@ -137,6 +143,7 @@ class Client:
         # Other
         self.awakeTimer = None
         self.transport = None
+        self.exceptionManager = Exceptions.clientException()
          
     def connection_made(self, transport: asyncio.Transport) -> None:
         """
@@ -182,13 +189,14 @@ class Client:
                     player.Tribulle.sendFriendDisconnected(self.playerName)
             del self.server.players[self.playerName]
 
+            if self.tribeCode != 0:
+                self.Tribulle.sendTribeMemberDisconnected()
+
             self.updateDatabase()
         
             if self.playerName in self.server.chatMessages:
                 self.server.chatMessages[self.playerName] = {}
                 del self.server.chatMessages[self.playerName]
-                
-                
         self.transport.close()
 
     def data_received(self, data: bytes) -> None:
@@ -286,7 +294,6 @@ class Client:
         #    self.transport.close()
         #    return
         #self.ipDetails = self.receiveIPDetails(self.ipAddress)
-        self.sendPlayerIdentification()
         self.sendLoginSourisInfo()
         self.sendSwitchTribulle(True)
         if not self.isGuest:
@@ -299,24 +306,31 @@ class Client:
                 self.isLuaCrew = True
             if "MapCrew" in self.playerRoles:
                 self.isMapCrew = True
+            self.sendPlayerIdentification()
             self.sendTimeStamp()
+            self.fillTribeInformation(self.tribeCode)
             self.Tribulle.sendFriendsList(None)
             self.sendDefaultChat()
             
             for player in self.server.players.values():
                 if self.playerName in player.friendsList and player.playerName in self.friendsList:
                     player.Tribulle.sendFriendConnected(self.playerName)
+                    
+            if self.tribeCode != 0:
+                self.Tribulle.sendTribeMemberConnected()
+        else:
+            self.sendPlayerIdentification()
          
         print(self.playerName)
 
-    def checkTimeAccount(self):
+    def checkTimeAccount(self) -> bool:
         """
         Checks the time about playerName creates new account.
         """
         rrf = self.Cursor['account'].find_one({'Ip':self.ipAddress})
         return rrf == None or int(str(time.time()).split(".")[0]) >= int(rrf['Time'])
                     
-    def fillLoginInformation(self, playerName, password):
+    def fillLoginInformation(self, playerName, password) -> bool:
         """
         Login stage 2
         """
@@ -421,7 +435,16 @@ class Client:
             self.server.loop.call_later(2, lambda: self.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(2).writeUTF("").writeUTF("").toByteArray()))
             return False
             
-    def sendAccountTime(self):
+    def fillTribeInformation(self, tribeCode) -> None:
+        rs = self.Cursor['tribe'].find_one({"Code":tribeCode})
+        if rs:
+            self.tribeName = rs["Name"]
+            self.tribeMessage = rs["Message"]
+            self.tribeHouse = rs["House"]
+            self.tribeRanks = rs["Ranks"]
+            self.tribeChat = rs["Chat"]
+            
+    def sendAccountTime(self) -> None:
         """
         Sends the account time before he can make alt.
         """
@@ -441,7 +464,7 @@ class Client:
         self.sendPacket(TFMCodes.game.send.Image_Login, ByteArray().writeUTF(self.server.eventInfo["adventure_img"]).toByteArray())
         self.sendPacket(TFMCodes.game.send.Verify_Code, ByteArray().writeInt(self.verifycoder).toByteArray())
                 
-    def sendDefaultChat(self):
+    def sendDefaultChat(self) -> None:
         if self.defaultLanguage in self.server.chats and not self.playerName in self.server.chats[self.defaultLanguage]:
             self.server.chats[self.defaultLanguage].append(self.playerName)
         elif not self.defaultLanguage in self.server.chats:
@@ -449,7 +472,7 @@ class Client:
             self.server.chats[self.defaultLanguage] = [self.playerName]
         self.sendTribullePacket(TFMCodes.tribulle.send.ET_SignaleRejointCanal, ByteArray().writeUTF(self.defaultLanguage).toByteArray())
                 
-    def sendLangueMessage(self, community, message, *args, isAll=False):
+    def sendLangueMessage(self, community, message, *args, isAll=False) -> None:
         """
         Sends the message translated by transformice languages.
         """
@@ -461,7 +484,7 @@ class Client:
         else:
             self.sendPacket(TFMCodes.game.send.Message_Langue, packet.toByteArray())
               
-    def sendLoginSourisInfo(self):
+    def sendLoginSourisInfo(self) -> None:
         """
         Sends the additional guest login information.
         """
@@ -471,7 +494,7 @@ class Client:
             self.sendPacket(TFMCodes.game.send.Login_Souris, ByteArray().writeByte(3).writeByte(15).toByteArray())
             self.sendPacket(TFMCodes.game.send.Login_Souris, ByteArray().writeByte(4).writeByte(200).toByteArray())
               
-    def sendMuteMessage(self, playerName, hours, reason, only):
+    def sendMuteMessage(self, playerName, hours, reason, only) -> None:
         """
         Sends the muted message.
         """
@@ -488,7 +511,7 @@ class Client:
         """
         self.sendPacket(TFMCodes.game.send.Server_Message, ByteArray().writeBoolean(tab).writeUTF(message).writeByte(0).writeUTF("").toByteArray())
         
-    def sendPlayerIdentification(self):
+    def sendPlayerIdentification(self) -> None:
         """
         Sends the player identification (permissions).
         """
@@ -548,22 +571,22 @@ class Client:
             data.writeUTF(self.server.serverLanguagesInfo[lang][0]).writeUTF(self.server.serverLanguagesInfo[lang][2])
         self.sendPacket(TFMCodes.game.send.Player_Identification, data.toByteArray())
                 
-    def sendSwitchTribulle(self, isNew):
+    def sendSwitchTribulle(self, isNew) -> None:
         """
         Switch to the new tribulle.
         """
         self.sendPacket(TFMCodes.game.send.Switch_Tribulle, ByteArray().writeBoolean(isNew).toByteArray())
         
-    def sendTimeStamp(self):
+    def sendTimeStamp(self) -> None:
         self.sendPacket(TFMCodes.game.send.Time_Stamp, ByteArray().writeInt(self.loginTime).toByteArray())
         
-    def sendTribullePacket(self, code, result):
+    def sendTribullePacket(self, code, result) -> None:
         """
         Sends packet to tribulle
         """
         self.sendPacket(TFMCodes.game.send.Tribulle_Packet, ByteArray().writeShort(code).writeBytes(result).toByteArray())
         
-    def sendPacketWholeChat(self, chatName, code, result, isAll=False):
+    def sendPacketWholeChat(self, chatName, code, result, isAll=False) -> None:
         """
         Sends packet to everyone in the specific chat.
         """
@@ -572,7 +595,7 @@ class Client:
                 if player.playerName in self.server.chats[chatName]:
                     player.sendTribullePacket(code, result)
                     
-    def sendPacketWholeTribe(self, code, result, all=False):
+    def sendPacketWholeTribe(self, code, result, all=False) -> None:
         """
         Sends packet to everyone in the tribe.
         """
@@ -581,13 +604,13 @@ class Client:
                 if player.tribeCode == self.tribeCode:
                     player.sendTribullePacket(code, result)
                     
-    
-    def updateDatabase(self): ########
+    def updateDatabase(self) -> None: ########
         """
         Update the database
         """
         if self.isGuest:
             return
+
         #self.DailyQuests.updateMissions()
         self.Cursor['users'].update_one({'Username':self.playerName}, {'$set':{
             'TitleID':self.titleID,
@@ -633,7 +656,7 @@ class Client:
             "FriendsList": ",".join(map(str, filter(None, [friend for friend in self.friendsList]))),
             "IgnoredsList": ",".join(map(str, filter(None, [ignored for ignored in self.ignoredsList]))),
             "Gender": self.gender,
-            "LastOn": self.lastOn,
+            "LastOn": self.Tribulle.getTime(),
             "LastDivorceTimer": self.lastDivorceTimer,
             "Marriage": self.marriage,
             "TribeCode": self.tribeCode,
@@ -657,4 +680,4 @@ class Client:
             "AdventureInfo": self.aventureInfo,
             "TotemInfo": self.totemInfo,
             "Roles": ",".join(map(str, self.playerRoles))
-            }})
+        }})

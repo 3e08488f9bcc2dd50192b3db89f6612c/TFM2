@@ -10,7 +10,6 @@ from colorconsole import win
 from src import Client
 from src.modules import Config, Exceptions
 
-
 class Server(asyncio.Transport):
     def __init__(self):
         # Integer
@@ -18,6 +17,7 @@ class Server(asyncio.Transport):
         self.lastCafeTopicID = 0
         self.lastCafePostID = 0
         self.lastChatID = 0
+        self.lastTribeID = 0
     
         # Float/Double
     
@@ -55,7 +55,7 @@ class Server(asyncio.Transport):
         self.swfInfo = self.config.readFile("./include/settings/swf_properties.json")
         self.titleInfo = self.config.readFile("./include/settings/titles.json", False)
 
-    def checkAlreadyExistingGuest(self, playerName):
+    def checkAlreadyExistingGuest(self, playerName) -> str:
         """
         Checks if guest with given name exist and generate a new name if exist.
         """
@@ -66,19 +66,25 @@ class Server(asyncio.Transport):
             playerName = "*" + playerName
         return playerName
 
-    def checkConnectedUser(self, playerName):
+    def checkConnectedUser(self, playerName) -> bool:
         """
         Checks if user is online.
         """
         return playerName in self.players
     
-    def checkExistingUser(self, playerName):
+    def checkExistingUser(self, playerName) -> bool:
         """
         Checks if user exist in the database.
         """
         return self.Cursor['users'].find_one({'Username':playerName}) != None
         
-    def checkMessage(self, message):
+    def checkExistingTribe(self, tribeName) -> bool:
+        """
+        Checks if tribe exist in the database.
+        """
+        return self.Cursor['tribe'].find_one({'Name':tribeName}) != None
+        
+    def checkMessage(self, message) -> bool:
         """
         Checks if message contains any bad word.
         """
@@ -89,7 +95,7 @@ class Server(asyncio.Transport):
             i += 1
         return False
 
-    def getBanInfo(self, playerName):
+    def getBanInfo(self, playerName) -> list:
         """
         Get additional information about playerName's ban.
         """
@@ -99,13 +105,13 @@ class Server(asyncio.Transport):
         else:
             return ["", 0]
 
-    def getEmailAddressCount(self, emailAddress):
+    def getEmailAddressCount(self, emailAddress) -> int:
         """
         Get total count of players with same email address.
         """
         return len(list(self.Cursor['users'].find({'Email':emailAddress})))
 
-    def getConfigID(self, config_id):
+    def getConfigID(self, config_id) -> int:
         try:
             r1 = self.Cursor['config'].find()
             return r1[0][config_id]
@@ -113,7 +119,7 @@ class Server(asyncio.Transport):
             print(f"[ERREUR] Unable to find the game config. Are you sure you added it to mongodb? Unable to find {config_id}")
             exit(0)
 
-    def getMuteInfo(self, playerName):
+    def getMuteInfo(self, playerName) -> list:
         """
         Get additional information about playerName's mute.
         """
@@ -123,7 +129,20 @@ class Server(asyncio.Transport):
         else:
             return ["", 0]
 
-    def getPlayerID(self, playerName):
+    def getPlayerAvatar(self, playerName) -> int:
+        """
+        Receive the player avatar.
+        """
+        if playerName in self.players:
+            return self.players[playerName].avatar
+        else:
+            rs = self.Cursor['users'].find_one({'Username':playerName})
+            if rs:
+                return rs['Avatar']
+            else:
+                return 0
+
+    def getPlayerID(self, playerName) -> int:
         """
         Receive the player id.
         """
@@ -136,7 +155,34 @@ class Server(asyncio.Transport):
             else:
                 return -1
 
-    def removeBan(self, playerName):
+    def getPlayerName(self, playerID) -> str:
+        rs = self.Cursor['users'].find_one({'PlayerID':playerID})
+        return rs['Username'] if rs else ""
+
+    def getPlayerTribeCode(self, playerName) -> int:
+        player = self.server.players.get(playerName)
+        if playerName:
+            return player.tribeCode
+
+        rs = self.Cursor['users'].find_one({'Username':playerName})
+        return rs['TribeCode'] if rs else 0
+
+    def getPlayerTribeRank(self, playerName) -> str:
+        player = self.players.get(playerName)
+        if player != None:
+            return self.players[playerName].tribeRank
+        rs = self.Cursor['users'].find_one({'Username':playerName})
+        return rs['TribeRank'] if rs else ""
+
+    def getTribeMembers(self, tribeCode) -> list:
+        rs = self.Cursor['tribe'].find_one({'Code':tribeCode})
+        return rs['Members'].split(",") if rs else []
+
+    def getTribeHistorique(self, tribeCode) -> str:
+        rs = self.Cursor['tribe'].find_one({'Code':tribeCode})
+        return rs['Historique'] if rs else ""
+
+    def removeBan(self, playerName) -> None:
         """
         Removes ban on given player.
         """
@@ -144,7 +190,7 @@ class Server(asyncio.Transport):
             self.userBanCache.remove(playerName)
         self.Cursor['usertempban'].delete_one({'Username':playerName})
     
-    def removeMute(self, playerName):
+    def removeMute(self, playerName) -> None:
         """
         Removes mute on given player.
         """
@@ -223,6 +269,7 @@ class Server(asyncio.Transport):
         self.lastPlayerID = self.getConfigID("lastPlayerID")
         self.lastCafeTopicID = self.getConfigID("lastCafeTopicID") # OK
         self.lastCafePostID = self.getConfigID("lastCafePostID") # OK
+        self.lastTribeID = self.getConfigID("lastTribeID") # OK
         
         
         for port in self.serverInfo["game_ports"]:

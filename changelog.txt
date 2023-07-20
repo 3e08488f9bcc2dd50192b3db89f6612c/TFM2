@@ -1,6 +1,6 @@
 Bugs Found:
 - Languages er and kg are not found.
-- Problems with friend's list
+- Problems with friend list.
 
 New:
 - To prevent email spamming you can add only 5 accounts in one email address.
@@ -28,12 +28,19 @@ Fixed:
 - Fixed problem with connected and disconnected message for friends.
 - Problem with default chats where players can't see their messages.
 - Fixed problem with whisper messages.
+- Fixed bug that you can't dissolve your tribe.
+- Fixed bug don't show message when player disconnect and its in tribe.
+- Fixed avatars doesn't appear in tribe.
+- Fixed avatars in cafe.
+- Fixed timestamp in tribe when player disconnect.
 
 Finished:
 [+] Account registration - 100%
 [+] Cafe - 100%
 [+] Languages - 100%
 [+] Surveys - 100%
-[+] Login - 7%
-[+] Punishments - 5%
-[+] Tribulle - 50%
+[+] Tribulle - 100%
+[+] Login - 20%
+[+] Punishments - 40%
+[+] Modopwet - 0%
+[+] Commands - 0%

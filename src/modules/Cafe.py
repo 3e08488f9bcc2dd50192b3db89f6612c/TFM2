@@ -6,13 +6,20 @@ from src.utils.Utils import Utils
 
 class Cafe:
     def __init__(self, _client, _server):
+        # Instances
         self.client = _client
         self.server = _server
         
-    def checkPerm(self):
+    def checkPerm(self) -> bool:
+        if self.server.serverInfo["server_debug"]:
+            return False
+        
         return self.client.isGuest or (self.client.cheeseCount < 1000 and self.client.playerTime < 108000)
    
-    async def createNewCafePost(self, topicID, message):
+    async def createNewCafePost(self, topicID, message) -> None:
+        """
+        Create a new post in the cafe.
+        """
         if self.checkPerm() == True:
             return
         commentsCount = 0
@@ -39,7 +46,10 @@ class Cafe:
         else:
             self.client.sendServerMessage("You are not allowed to use blacklist words in your cafe post.", True)
         
-    async def createNewCafeTopic(self, title, message):
+    async def createNewCafeTopic(self, title, message) -> None:
+        """
+        Create a new topic in the cafe.
+        """
         if self.checkPerm() == True:
             return
         if not self.server.checkMessage(title):
@@ -59,7 +69,10 @@ class Cafe:
             self.client.sendServerMessage("You are not allowed to use blacklist words in your cafe topic.", True)
         await self.loadCafeMode()
         
-    async def deleteAllCafePost(self, topicID, playerName):
+    async def deleteAllCafePost(self, topicID, playerName) -> None:
+        """
+        Delete all cafe posts by given player.
+        """
         topic_posts = self.server.Cursor["cafe_posts"].count_documents({"TopicID": topicID})
         player_posts = self.server.Cursor["cafe_posts"].count_documents({"TopicID": topicID, "Name": playerName})
         self.server.Cursor["cafe_posts"].delete_many({"TopicID": topicID, "Name": playerName})
@@ -74,7 +87,10 @@ class Cafe:
         else:
             await self.openCafeTopic(topicID)
         
-    async def deleteCafePost(self, postID):
+    async def deleteCafePost(self, postID) -> None:
+        """
+        Delete specific post by given player.
+        """
         res = self.server.Cursor["cafe_posts"].find_one({"PostID": postID})
         if res:
             topicID = res["TopicID"]
@@ -94,7 +110,10 @@ class Cafe:
         else:
             print(f"[ERREUR] Unable to find postid {postID} on the cafe.")
         
-    async def loadCafeMode(self):
+    async def loadCafeMode(self) -> None:
+        """
+        Loads the cafe.
+        """
         if self.checkPerm() == True:
             self.client.sendLangueMessage("", "<ROSE>$PasAutoriseParlerSurServeur")
             return
@@ -103,27 +122,36 @@ class Cafe:
         rss = self.server.Cursor['cafe_topics'].find().sort('Date', pymongo.DESCENDING).limit(20)
         for rs in rss:
             if rs["Langue"] == self.client.defaultLanguage:
-                packet.writeInt(rs["TopicID"]).writeUTF(rs["Title"]).writeInt(self.server.getPlayerID(rs["Author"])).writeInt(rs["Posts"]).writeUTF(rs["LastPostName"]).writeInt(Utils.getSecondsDiff(rs["Date"]))
+                packet.writeInt(rs["TopicID"]).writeUTF(rs["Title"]).writeInt(self.server.getPlayerAvatar(rs["Author"])).writeInt(rs["Posts"]).writeUTF(rs["LastPostName"]).writeInt(Utils.getSecondsDiff(rs["Date"]))
         self.client.sendPacket(TFMCodes.game.send.Cafe_Topics_List, packet.toByteArray())
         await self.client.Cafe.sendCafeWarnings()
         
-    async def ModerateTopic(self, topicID, delete):
+    async def ModerateTopic(self, topicID, delete) -> None:
+        """
+        Set the topic under moderation vote.
+        """
         self.server.Cursor["cafe_posts"].update_one({"PostID": self.server.moderatedCafeTopics[topicID][0]}, {'$set':{'Status': (2 if delete else 1), "ModeratedBY":self.client.playerName}})
         self.server.moderatedCafeTopics[topicID].pop(0)
         if len(self.server.moderatedCafeTopics[topicID]) == 0:
             del self.server.moderatedCafeTopics[topicID]
         await self.openCafeTopic(topicID)
         
-    async def openCafeTopic(self, topicID):
+    async def openCafeTopic(self, topicID) -> None:
+        """
+        Open the cafe topic.
+        """
         if self.checkPerm() == True:
             return
         packet = ByteArray().writeBoolean(True).writeInt(topicID).writeBoolean(1 if topicID in self.server.moderatedCafeTopics and self.client.privLevel >= 7 else 0).writeBoolean(True)
         results = self.server.Cursor["cafe_posts"].find({"TopicID": topicID}).sort("PostID", pymongo.ASCENDING)
         for rs in results:
-            packet.writeInt(rs["PostID"]).writeInt(self.server.getPlayerID(rs["Name"])).writeInt(Utils.getSecondsDiff(rs["Date"])).writeUTF(rs["Name"]).writeUTF(rs["Post"]).writeBoolean(str(self.client.playerCode) not in rs["Votes"].split(",")).writeShort(rs["Points"]).writeUTF("" if self.client.privLevel < 7 else rs["ModeratedBY"]).writeByte(rs["Status"] if self.client.playerName == rs["Name"] and rs["Status"] in [0, 2] or self.client.privLevel > 7 else 0)
+            packet.writeInt(rs["PostID"]).writeInt(self.server.getPlayerAvatar(rs["Name"])).writeInt(Utils.getSecondsDiff(rs["Date"])).writeUTF(rs["Name"]).writeUTF(rs["Post"]).writeBoolean(str(self.client.playerCode) not in rs["Votes"].split(",")).writeShort(rs["Points"]).writeUTF("" if self.client.privLevel < 7 else rs["ModeratedBY"]).writeByte(rs["Status"] if self.client.playerName == rs["Name"] and rs["Status"] in [0, 2] or self.client.privLevel > 7 else 0)
         self.client.sendPacket(TFMCodes.game.send.Open_Cafe_Topic, packet.toByteArray())
                 
-    async def ReportCafePost(self, postID, topicID):
+    async def ReportCafePost(self, postID, topicID) -> None:
+        """
+        Report the cafe topic.
+        """
         results = self.server.Cursor["cafe_posts"].find_one({"TopicID": topicID, "PostID": postID})
         results2 = self.server.Cursor["cafe_topics"].find_one({"TopicID": topicID})
         if not results or not results2:
@@ -135,11 +163,17 @@ class Cafe:
         else:
             self.server.moderatedCafeTopics[topicID].append(postID)
                 
-    async def sendCafeWarnings(self):
+    async def sendCafeWarnings(self) -> None:
+        """
+        Sends all cafe warnings.
+        """
         count = self.server.Cursor["cafe_posts"].count_documents({"Status": 2, "Name": self.client.playerName})
         self.client.sendPacket(TFMCodes.game.send.Send_Cafe_Warnings, ByteArray().writeUnsignedShort(count).toByteArray())
                 
-    async def ViewCafePosts(self, playerName):
+    async def ViewCafePosts(self, playerName) -> None:
+        """
+        View somebody's all cafe posts.
+        """
         rss = self.server.Cursor["cafe_posts"].find({"Name": playerName})
         content = ""
         for rs in rss:
@@ -148,7 +182,10 @@ class Cafe:
             content += str(datetime.datetime.fromtimestamp(date)) + " | " + msg + "\n"
         self.client.sendPacket(TFMCodes.game.send.Minibox_1, ByteArray().writeShort(300).writeUTF("Messages by "+playerName).writeUTF(content).toByteArray())
                 
-    async def voteCafePost(self, topicID, postID, mode):
+    async def voteCafePost(self, topicID, postID, mode) -> None:
+        """
+        Vote in cafe post.
+        """
         if self.checkPerm() == True:
             return
         results = self.server.Cursor["cafe_posts"].find_one({"TopicID": topicID, "PostID": postID})

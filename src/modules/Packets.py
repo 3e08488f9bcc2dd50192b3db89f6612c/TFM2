@@ -17,7 +17,7 @@ class Packets:
         
         self.receivePackets()
 
-    def packet(self, func=None, args=[]):
+    def packet(self, func=None, args=[]) -> None:
         if not func: 
             return lambda x: self.packet(x, args)
         else:
@@ -25,7 +25,7 @@ class Packets:
                 exec(f"self.ccc = TFMCodes.game.recv.{func.__name__}")
                 self.packets[self.ccc[0] << 8 | self.ccc[1]] = [args,func]
 
-    async def parsePacket(self, packetID, C, CC, packet):
+    async def parsePacket(self, packetID, C, CC, packet) -> None:
         ccc = C << 8 | CC
         args = []
         self.packet = packet
@@ -179,7 +179,7 @@ class Packets:
                             "ShamanBadges": "",
                             "EquipedShamanBadge" : 0,
                             "Letters": "",
-                            "Avatar": "",
+                            "Avatar": 0,
                             "Time": 0,
                             "Karma": 0,
                             "AdventureInfo": "",
@@ -409,7 +409,7 @@ class Packets:
             await self.client.Cafe.voteCafePost(topicID, postID, mode)
 
 
-    async def sendPacket(self, identifiers, data=b""):
+    async def sendPacket(self, identifiers, data=b"") -> None:
         if self.client.isClosed:
             return
             

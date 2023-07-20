@@ -34,11 +34,11 @@ class Utils:
         return '.'.join([hex(int(x)+256)[3:].upper() for x in ip.split('.')])
         
     @staticmethod
-    def getSecondsDiff(endTimeMillis):
+    def getSecondsDiff(endTimeMillis) -> int:
         return int(Utils.getTime() - endTimeMillis)
         
     @staticmethod
-    def getHoursDiff(endTimeMillis):
+    def getHoursDiff(endTimeMillis) -> int:
         startTime = Utils.getTime()
         startTime = datetime.datetime.fromtimestamp(float(startTime))
         endTime = datetime.datetime.fromtimestamp(float(endTimeMillis))

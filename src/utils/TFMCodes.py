@@ -1,24 +1,48 @@
 class TFMCodes:
     class tribulle:
         class recv:
+            ST_ChangerDeGenre = 10
             ST_AjoutAmi = 18
             ST_RetireAmi = 20
+            ST_DemandeEnMariage = 22
+            ST_RepondDemandeEnMariage = 24
+            ST_DemandeDivorce = 26
             ST_ListeAmis = 28
             ST_FermerListeAmis = 30
             ST_AjoutListeNoire = 42
             ST_RetireListeNoire = 44
             ST_ListeNoire = 46
             ST_EnvoitMessageCanal = 48
+            ST_EnvoitTribuMessageCanal = 50
             ST_EnvoitMessagePrive = 52
             ST_RejoindreCanal = 54
             ST_QuitterCanal = 56
             ST_DemandeMembresCanal = 58
             ST_DefinitModeSilence = 60
-            #ST_DemandeInformationsTribu = 108
+            ST_InviterMembre = 78
+            ST_RepondInvitationTribu = 80
+            ST_QuitterTribu = 82
+            ST_CreerTribu = 84
+            ST_ChangerMessageJour = 98
+            ST_ChangerCodeMaisonTFM = 102
+            ST_ExclureMembre = 104
+            ST_DemandeInformationsTribu = 108
+            ST_FermerTribu = 110
+            ST_AffecterRang = 112
+            ST_RenommerRang = 116
+            ST_SupprimerDroitRang = 114
+            ST_AjouterRang = 118
+            ST_SupprimerRang = 120
+            ST_InverserOrdreRangs = 122
+            ST_DesignerChefSpirituel = 126
+            ST_DissoudreTribu = 128
+            ST_ListeHistoriqueTribu = 132
             
         class send:
             ET_ResultatAjoutAmi = 19
             ET_ResultatRetireAmi = 21
+            ET_ErreurDemandeEnMariage = 23
+            ET_ResultatRepondDemandeEnMariage = 25
             ET_ResultatFermerListeAmis = 31
             ET_SignaleConnexionAmi = 32
             ET_SignaleDeconnexionAmi = 33
@@ -26,6 +50,10 @@ class TFMCodes:
             ET_SignaleAjoutAmiBidirectionnel = 35
             ET_SignaleAjoutAmi = 36
             ET_SignaleRetraitAmi = 37
+            ET_SignaleDemandeEnMariage = 38
+            ET_SignaleMariage = 39
+            ET_ResultatDemandeEnMariage = 40
+            ET_SignaleDivorce = 41
             ET_ResultatAjoutListeNoire = 43
             ET_ResultatRetireListeNoire = 45
             ET_ResultatListeNoire = 47
@@ -38,7 +66,28 @@ class TFMCodes:
             ET_SignaleRejointCanal = 62
             ET_SignaleQuitteCanal = 63
             ET_SignaleMessageCanal = 64
+            ET_SignaleEnvoitTribuMessageCanal = 65
             ET_RecoitMessagePrive = 66
+            ET_ResultatInvitationTribu = 79
+            ET_ResultatInviterMembre = 81
+            ET_ResultatQuitterTribu = 83
+            ET_ResultatCreerTribu = 85
+            ET_SignaleInvitationTribu = 86
+            ET_SignaleNouveauMembre = 89
+            ET_SignaleCreerTribu = 89
+            ET_SignaleExclusion = 93
+            ET_ErreurChangerMessageJour = 99
+            ET_ResultatExclureMembre = 105
+            ET_ErreurInformationsTribu = 109
+            ET_SignaleFermerTribu = 111
+            ET_SignaleChangementRang = 113
+            ET_ResultatChangerMessageJour = 125
+            ET_ResultatDissoudreTribuJour = 127
+            ET_ResultatDesignerChefSpirituel = 127
+            ET_ResultatDissoudreTribu = 129
+            ET_ResultatInformationsTribu = 130
+            ET_SignaleConnexionMembre = 131
+            ET_ResultatListeHistoriqueTribu = 133
     
     class game:
         class recv:

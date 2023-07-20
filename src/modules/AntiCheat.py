@@ -2,8 +2,11 @@ import json
 
 class AntiCheat:
     def __init__(self, client, server):
+        # Instances
         self.client = client
         self.server = client.server
+        
+        # Other
         self.info = self.server.antiCheatInfo
         
     def __get__(self):
