@@ -1,2 +1,0 @@
-py mainserver.py
-pause
