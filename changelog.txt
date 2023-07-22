@@ -1,12 +1,18 @@
 Bugs Found:
 - Languages er and kg are not found.
-- Problems with friend list.
+- Gender does not appear in friendlist.
 
 New:
 - To prevent email spamming you can add only 5 accounts in one email address.
 - Added security in staff packets.
 - Reports in cafe are functional.
 - View player's messages in cafe is functional.
+- Updated the #ChatLog.
+- You can now unban and ban offline players.
+- You can now get report notification if you enable the chat notifications in modopwet.
+- The server will remove shop cheeses from range 1000 to 9999 on punished players.
+- You can also moderate messages in chats, whispers and tribe.
+- Added GEOIP.dat support. (You don't need anymore to use any request about get ip information).
 
 Fixed:
 - Fixed bug with email address.
@@ -33,14 +39,28 @@ Fixed:
 - Fixed avatars doesn't appear in tribe.
 - Fixed avatars in cafe.
 - Fixed timestamp in tribe when player disconnect.
+- Fixed seperating in modopwet.
+- Fixed problems with staff connection messages.
+- Fixed problem with tribe when player enter in a room.
+- Fixed avatars does not show in profiles.
+- Fixed divorce stuff.
+- Fixed bug where muted players can bypass after disconnect.
+- Fixed the mute system.
+- Fixed the /unmute command.
+- Fixed not showing the ban message in modopwet.
+- Fixed when modopwet does not update when player connects to game.
+- Fixed punishment pop up appears only in cheaters who were banned from the game.
 
 Finished:
 [+] Account registration - 100%
 [+] Cafe - 100%
 [+] Languages - 100%
 [+] Surveys - 100%
+[+] Permissions & Staff Channels - 100%
+[+] Punishments - 100% (Ban and mute)
 [+] Tribulle - 100%
-[+] Login - 20%
-[+] Punishments - 40%
-[+] Modopwet - 0%
-[+] Commands - 0%
+[+] Login - 45%
+[+] Modopwet - 90%
+[+] Commands - 15%
+[+] Room Management - 5%
+[+] Drawing - 0%

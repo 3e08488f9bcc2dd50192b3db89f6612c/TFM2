@@ -1,0 +1,2 @@
+py startBulle.py
+pause

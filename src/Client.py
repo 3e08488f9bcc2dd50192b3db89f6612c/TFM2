@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import random
 import time
+from collections import deque
 from src.modules import AntiCheat, ByteArray, Cafe, Commands, DailyQuests, Exceptions, ModoPwet, Packets, Shop, Skills, Tribulle
 from src.utils.Utils import Utils
 from src.utils.TFMCodes import TFMCodes
@@ -14,18 +15,26 @@ class Client:
         self.clientPacket = ByteArray()
 
         # Boolean
+        self.hasCheese = False
         self.isCafeOpen = False
         self.isClosed = False
+        self.isDead = False
+        self.isEnterRoom = False
         self.isFashionSquad = False
         self.isFunCorpTeam = False
         self.isGuest = False
+        self.isHidden = False
         self.isLuaCrew = False
         self.isMapCrew = False
+        self.isModoPwet = False
+        self.isMumuted = False
         self.isMuted = False
+        self.isPrisoned = False
         self.isReloadCafe = False
+        self.isShaman = False
         self.isTribeOpen = False
         self.sendFlashPlayerNotice = False
-        self.sendPunishmentPopup = False
+        self.receivePunishmentPopup = False
         self.openingFriendList = False
         self.validatingVersion = False
 
@@ -53,8 +62,9 @@ class Client:
         self.petEnd = 0
         self.playerCode = 0
         self.playerID = 0
-        self.playerTime = 0
         self.playerKarma = 0
+        self.playerScore = 0
+        self.playerTime = 0
         self.privLevel = 0
         self.regDate = 0
         self.shamanCheeses = 0
@@ -66,6 +76,7 @@ class Client:
         self.shopFraises = 0
         self.silenceType = 0
         self.titleID = 0
+        self.titleStars = 0
         self.tribeCode = 0
         self.tribeChat = 0
         self.tribeJoined = 0
@@ -85,13 +96,18 @@ class Client:
         self.flashPlayerVersion = ""
         self.flashPlayerInformation = ""
         self.ipAddress = ""
+        self.lastMessage = ""
+        self.lastRoom = ""
         self.marriage = ""
+        self.modoPwetLangue = "ALL"
         self.mouseColor = "78583a"
         self.osLanguage = ""
         self.osVersion = ""
+        self.playerFakeName = ""
         self.playerLetters = ""
         self.playerLook = "1;0,0,0,0,0,0,0,0,0,0,0"
         self.playerName = ""
+        self.playerNameColor = "95d9d6"
         self.shamanColor = "95d9d6"
         self.shamanLook = "0,0,0,0,0,0,0,0,0,0"
         self.shopClothes = ""
@@ -103,6 +119,7 @@ class Client:
         self.shopShamanItems = ""
         self.silenceMessage = ""
         self.swfUrl = ""
+        self.tempMouseColor = ""
         self.totemInfo = ""
         self.tribeMessage = ""
         self.tribeName = ""
@@ -128,13 +145,16 @@ class Client:
         self.ignoredsList = []
         self.ignoredMarriageInvites = []
         self.ignoredTribeInvites = []
+        self.invitedTribeHouses = []
         self.marriageInvite = []
+        self.modopwetCommunityNotifications = []
         self.playerRoles = []
         self.racingStats = [0, 0, 0, 0]
         self.shamanTitleList = []
         self.shopTitleList = []
         self.staffTitleList = []
         self.survivorStats = [0, 0, 0, 0]
+        self.titleList = []
         self.tribeInvite = []
 
         # Loops
@@ -142,8 +162,9 @@ class Client:
         
         # Other
         self.awakeTimer = None
+        self.CMDTime = time.time()
+        self.msgTime = time.time()
         self.transport = None
-        self.exceptionManager = Exceptions.clientException()
          
     def connection_made(self, transport: asyncio.Transport) -> None:
         """
@@ -159,6 +180,7 @@ class Client:
         self.Cafe = Cafe(self, self.server)
         self.Commands = Commands(self, self.server)
         self.DailyQuests = DailyQuests(self, self.server)
+        self.exceptionManager = Exceptions.ClientException(self)
         self.ModoPwet = ModoPwet(self, self.server)
         self.Packets = Packets(self, self.server)
         self.Shop = Shop(self, self.server)
@@ -169,7 +191,6 @@ class Client:
             self.server.connectedCounts[self.ipAddress] += 1
         else:
             self.server.connectedCounts[self.ipAddress] = 1
-
 
     def connection_lost(self, *args) -> None: ##########
         """
@@ -191,12 +212,17 @@ class Client:
 
             if self.tribeCode != 0:
                 self.Tribulle.sendTribeMemberDisconnected()
+            self.sendModInfo(False)
 
-            self.updateDatabase()
-        
             if self.playerName in self.server.chatMessages:
                 self.server.chatMessages[self.playerName] = {}
                 del self.server.chatMessages[self.playerName]
+                
+            if self.playerName in self.server.serverReports:
+                if not self.server.serverReports[self.playerName]["state"] in ["banned", "deleted"]:
+                    self.server.serverReports[self.playerName]["state"] = "disconnected"
+                    
+            self.updateDatabase()
         self.transport.close()
 
     def data_received(self, data: bytes) -> None:
@@ -271,23 +297,13 @@ class Client:
                         i += 1
                     self.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(11).writeShort(len(p.toByteArray())).writeBytes(p.toByteArray()).writeShort(0).toByteArray())
                     return
-                elif len(players) == 1:
-                    if not self.fillLoginInformation(playerName, password):
-                        return
-                else:
-                    self.server.loop.call_later(2, lambda: self.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(2).writeUTF("").writeUTF("").toByteArray()))
-                    return                    
-                    
-            elif self.server.checkConnectedUser(playerName):
-                self.server.loop.call_later(2, lambda: self.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(2).writeUTF("").writeUTF("").toByteArray()))
-                return
             else:
+                # Player
                 if not self.fillLoginInformation(playerName, password):
                     return
         
         self.playerCode += 1
         self.server.players[self.playerName] = self
-        self.loginTime = Utils.getTime()
         #if len(self.server.players) > self.server.MaximumPlayers:
         #    self.sendPacket(Identifiers.send.Queue_popup, ByteArray().writeInt(len(self.server.players) - self.server.MaximumPlayers).toByteArray())
         #    await asyncio.sleep(10)
@@ -296,6 +312,7 @@ class Client:
         #self.ipDetails = self.receiveIPDetails(self.ipAddress)
         self.sendLoginSourisInfo()
         self.sendSwitchTribulle(True)
+        self.loginTime = Utils.getTime()
         if not self.isGuest:
             # Staff Positions
             if "FashionSquad" in self.playerRoles:
@@ -306,10 +323,13 @@ class Client:
                 self.isLuaCrew = True
             if "MapCrew" in self.playerRoles:
                 self.isMapCrew = True
+                
+            self.logConnection()
             self.sendPlayerIdentification()
             self.sendTimeStamp()
             self.fillTribeInformation(self.tribeCode)
             self.Tribulle.sendFriendsList(None)
+            self.sendModInfo(True)
             self.sendDefaultChat()
             
             for player in self.server.players.values():
@@ -318,9 +338,18 @@ class Client:
                     
             if self.tribeCode != 0:
                 self.Tribulle.sendTribeMemberConnected()
+                
+            if self.playerName in self.server.serverReports:
+                self.server.serverReports[self.playerName]["state"] = "online"
         else:
             self.sendPlayerIdentification()
-         
+            
+            
+            
+
+        self.startBulle("1") # self.startBulle(self.server.checkRoom(startRoom, self.langue) if not startRoom == "" and not startRoom == "1" else self.server.recommendRoom(self.langue))
+        self.server.loop.call_later(1, self.sendFlashPlayerWarning)
+        self.server.loop.call_later(1, self.sendPunishmentPopup)
         print(self.playerName)
 
     def checkTimeAccount(self) -> bool:
@@ -334,6 +363,10 @@ class Client:
         """
         Login stage 2
         """
+        if self.server.checkConnectedUser(playerName):
+            self.server.loop.call_later(2, lambda: self.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(1).writeUTF("").writeUTF("").toByteArray()))
+            return False
+        
         if self.privLevel == -1:
             self.sendPacket(TFMCodes.old.send.Player_Ban_Login, ["This account is permanently banned."])
             return False
@@ -343,10 +376,18 @@ class Client:
             timeCalc = Utils.getHoursDiff(banInfo[1])
             if timeCalc <= 0:
                 self.server.removeBan(playerName)
-                self.sendPunishmentPopup = True
+                self.receivePunishmentPopup = True
             else:
                 self.sendPacket(TFMCodes.old.send.Player_Ban_Login, [timeCalc, banInfo[0]])
                 return False
+    
+        muteInfo = self.server.getMuteInfo(playerName)
+        if len(muteInfo) > 0:
+            timeCalc = Utils.getHoursDiff(muteInfo[1])
+            if timeCalc <= 0:
+                self.server.removeMute(self.playerName, "ServeurMute")
+            else:
+                self.isMuted = True
     
         rs = self.Cursor['users'].find_one({('Email' if "@" in playerName else 'Username'):playerName,'Password':password})
         if rs:
@@ -444,6 +485,10 @@ class Client:
             self.tribeRanks = rs["Ranks"]
             self.tribeChat = rs["Chat"]
             
+    def logConnection(self):
+        country = self.server.geoIPData.country_name_by_addr(self.ipAddress)
+        self.Cursor['loginlog'].insert_one({'Username':self.playerName, 'IP':Utils.EncodeIP(self.ipAddress), 'Country':country if country != "" else "localhost", 'Time': Utils.getDate(), 'Community': self.defaultLanguage, 'ConnectionID':self.server.serverInfo["game_name"]})
+            
     def sendAccountTime(self) -> None:
         """
         Sends the account time before he can make alt.
@@ -455,6 +500,21 @@ class Client:
         else:
            self.Cursor['account'].update_one({'Ip':self.ipAddress},{'$set':{'Time':eventTime}})
             
+    def sendAnchors(self) -> None:
+        """
+        Sends all anchors in the room.
+        """
+        self.sendPacket(TFMCodes.old.send.Anchors, self.room.anchors)
+            
+    def sendBanMessage(self, hours, reason, silent) -> None:
+        """
+        Sends the ban pop up and message to everyone in the room.
+        """
+        self.transport.close()
+        if self.room != None and not silent:
+            for player in self.room.clients.copy().values():
+                player.sendLangueMessage("", "<ROSE>• [Moderation] $Message_Ban", self.playerName, str(hours), reason)
+            
     def sendCorrectVersion(self, lang='en') -> None:
         """
         Sends the login screen.
@@ -465,6 +525,9 @@ class Client:
         self.sendPacket(TFMCodes.game.send.Verify_Code, ByteArray().writeInt(self.verifycoder).toByteArray())
                 
     def sendDefaultChat(self) -> None:
+        """
+        Sends the default community custom chat.
+        """
         if self.defaultLanguage in self.server.chats and not self.playerName in self.server.chats[self.defaultLanguage]:
             self.server.chats[self.defaultLanguage].append(self.playerName)
         elif not self.defaultLanguage in self.server.chats:
@@ -472,6 +535,20 @@ class Client:
             self.server.chats[self.defaultLanguage] = [self.playerName]
         self.sendTribullePacket(TFMCodes.tribulle.send.ET_SignaleRejointCanal, ByteArray().writeUTF(self.defaultLanguage).toByteArray())
                 
+    def sendEnterRoom(self, roomName) -> None:
+        found = False
+        rooms = roomName[3:]
+        count = "".join(i for i in rooms if i.isdigit())
+        for room in ["vanilla", "survivor", "racing", "music", "bootcamp", "defilante", "village", "#fastracing"]:
+            if rooms.startswith(room) and not count == "" or rooms.isdigit():
+                found = not (int(count) < 1 or int(count) > 1000 or rooms == room)
+        self.sendPacket(TFMCodes.game.send.Enter_Room, ByteArray().writeBoolean(found).writeUTF(roomName).writeUTF("xx" if roomName.startswith("*") else self.defaultLanguage.upper()).toByteArray())
+
+    def sendFlashPlayerWarning(self):
+        if self.sendFlashPlayerNotice:
+            self.sendPacket(TFMCodes.game.send.Flash_Player_Attention_Popup, ByteArray().writeUTF("").toByteArray())
+            self.sendFlashPlayerNotice = False
+
     def sendLangueMessage(self, community, message, *args, isAll=False) -> None:
         """
         Sends the message translated by transformice languages.
@@ -483,6 +560,15 @@ class Client:
             self.room.sendAll(TFMCodes.game.send.Message_Langue, packet.toByteArray())
         else:
             self.sendPacket(TFMCodes.game.send.Message_Langue, packet.toByteArray())
+            
+    def sendLangueMessageOthers(self, community, message, *args) -> None:
+        """
+        Sends the message translated by transformice languages.
+        """
+        packet = ByteArray().writeUTF(community).writeUTF(message).writeByte(len(args))
+        for arg in args:
+            packet.writeUTF(arg)
+        self.room.sendAllOthers(self, TFMCodes.game.send.Message_Langue, packet.toByteArray())
               
     def sendLoginSourisInfo(self) -> None:
         """
@@ -494,22 +580,96 @@ class Client:
             self.sendPacket(TFMCodes.game.send.Login_Souris, ByteArray().writeByte(3).writeByte(15).toByteArray())
             self.sendPacket(TFMCodes.game.send.Login_Souris, ByteArray().writeByte(4).writeByte(200).toByteArray())
               
+    def sendMessage(self, message) -> None:
+        """
+        Sends a message in the chat.
+        """
+        self.sendPacket(TFMCodes.game.send.Message, ByteArray().writeUTF(message).toByteArray())
+              
+    def sendModInfo(self, isOnline) -> None:
+        """
+        Sends information when staff member connect or disconnect from the game.
+        """
+        if self.privLevel == 9:
+            self.server.sendMessageAll(9, f"<font color='#fc0303'>• [{self.defaultLanguage.upper()}] {self.playerName} {'just connected' if bool(isOnline) else 'has disconnected'}.</font>")
+            
+        elif self.privLevel in [8, 7]:
+            cc = "<font color='#b993ca'>" if not self.privLevel == 8 else "<font color='#c565fe'>"
+            self.server.sendMessageAll(7, f"{cc}• [{self.defaultLanguage.upper()}] {self.playerName} {'just connected' if bool(isOnline) else 'has disconnected'}.</font>")
+            
+        elif self.privLevel == 6 or self.isMapCrew:
+            self.server.sendMessageAll(6, f"<font color='#2F7FCC'>• [{self.defaultLanguage.upper()}] {self.playerName} {'just connected' if bool(isOnline) else 'has disconnected'}.</font>")
+            
+        elif self.privLevel == 5 or self.isFunCorpTeam:
+            self.server.sendMessageAll(5, f"<font color='#F89F4B'>• [{self.defaultLanguage.upper()}] {self.playerName} {'just connected' if bool(isOnline) else 'has disconnected'}.</font>")
+            
+        elif self.privLevel == 4 or self.isLuaCrew:
+            self.server.sendMessageAll(4, f"<font color='#79bbac'>• [{self.defaultLanguage.upper()}] {self.playerName} {'just connected' if bool(isOnline) else 'has disconnected'}.</font>")
+            
+        elif self.privLevel == 3 or self.isFashionSquad:
+            self.server.sendMessageAll(3, f"<font color='#ffb6c1'>• [{self.defaultLanguage.upper()}] {self.playerName} {'just connected' if bool(isOnline) else 'has disconnected'}.</font>")
+              
+        if (self.privLevel > 2 or self.isFashionSquad or self.isLuaCrew or self.isFunCorpTeam or self.isMapCrew) and isOnline == True:
+            for player in self.server.players.values():
+                if player != self:
+                    if player.privLevel == 9 and self.privLevel == 9:
+                        self.sendMessage(f"<font color='#fc0303'>• [{player.defaultLanguage.upper()}] {player.playerName} : {player.roomName}</font>")
+                    elif player.privLevel == 8 and self.privLevel == 8:
+                        self.sendMessage(f"<font color='#b993ca'>• [{player.defaultLanguage.upper()}] {player.playerName} : {player.roomName}</font>")
+                    elif player.privLevel == 7 and self.privLevel == 7:
+                        self.sendMessage(f"<font color='#c565fe'>• [{player.defaultLanguage.upper()}] {player.playerName} : {player.roomName}</font>")
+                    elif (player.privLevel == 6 or player.isMapCrew) and (self.privLevel == 6 or self.isMapCrew):
+                        self.sendMessage(f"<font color='#2F7FCC'>• [{player.defaultLanguage.upper()}] {player.playerName} : {player.roomName}</font>")
+                    elif (player.privLevel == 5 or player.isFunCorpTeam) and (self.privLevel == 5 or self.isFunCorpTeam):
+                        self.sendMessage(f"<font color='#F89F4B'>• [{player.defaultLanguage.upper()}] {player.playerName} : {player.roomName}</font>")
+                    elif (player.privLevel == 4 or player.isLuaCrew) and (self.privLevel == 4 or self.isLuaCrew):
+                        self.sendMessage(f"<font color='#79bbac'>• [{player.defaultLanguage.upper()}] {player.playerName} : {player.roomName}</font>")
+                    elif (player.privLevel == 3 or player.isFashionSquad) and (self.privLevel == 3 or self.isFashionSquad):
+                        self.sendMessage(f"<font color='#ffb6c1'>• [{player.defaultLanguage.upper()}] {player.playerName} : {player.roomName}</font>")
+              
     def sendMuteMessage(self, playerName, hours, reason, only) -> None:
         """
         Sends the muted message.
         """
         if only == False:
-            self.sendLangueMessage("", "<ROSE>$MuteInfo2", playerName, hours, reason, isAll=True)
+            self.sendLangueMessageOthers("", "<ROSE>$MuteInfo2", playerName, hours, reason)
         else:
             player = self.server.players.get(playerName)
             if player:
                 player.sendLangueMessage("", "<ROSE>$MuteInfo1", hours, reason, isAll=False)
+              
+    def sendPunishmentPopup(self):
+        if self.receivePunishmentPopup:
+            amount = random.randint(1000, 9999)
+            self.sendPacket(TFMCodes.game.send.Take_Cheese_Popup, ByteArray().writeShort(amount).toByteArray())
+            self.shopCheeses -= amount
+            if self.shopCheeses < 0:
+                self.shopCheeses = 0
+            self.receivePunishmentPopup = False
               
     def sendServerMessage(self, message, tab=False) -> None:
         """
         Sends message in #Server
         """
         self.sendPacket(TFMCodes.game.send.Server_Message, ByteArray().writeBoolean(tab).writeUTF(message).writeByte(0).writeUTF("").toByteArray())
+        
+    def sendPacketWholeChat(self, chatName, code, result, isAll=False) -> None:
+        """
+        Sends packet to everyone in the specific chat.
+        """
+        for player in self.server.players.copy().values():
+            if player.playerCode != self.playerCode or isAll:
+                if player.playerName in self.server.chats[chatName]:
+                    player.sendTribullePacket(code, result)
+                    
+    def sendPacketWholeTribe(self, code, result, all=False) -> None:
+        """
+        Sends packet to everyone in the tribe.
+        """
+        for player in self.server.players.copy().values():
+            if player.playerCode != self.playerCode or all:
+                if player.tribeCode == self.tribeCode:
+                    player.sendTribullePacket(code, result)
         
     def sendPlayerIdentification(self) -> None:
         """
@@ -571,6 +731,92 @@ class Client:
             data.writeUTF(self.server.serverLanguagesInfo[lang][0]).writeUTF(self.server.serverLanguagesInfo[lang][2])
         self.sendPacket(TFMCodes.game.send.Player_Identification, data.toByteArray())
                 
+    def sendProfile(self, playerName) -> None:
+        """
+        Sends the player's profile.
+        """
+        player = self.server.players.get(playerName)
+        if player != None and not player.isGuest:
+            packet = ByteArray().writeUTF(player.playerName).writeInt(player.avatar).writeInt(str(player.regDate)[:10]).writeInt(int(self.server.getProfileColor(player), 16)).writeByte(player.gender).writeUTF(player.tribeName).writeUTF(player.marriage)
+            
+            for stat in [player.normalSaves, player.shamanCheeses, player.firstCount, player.cheeseCount, player.hardSaves, player.bootcampCount, player.divineSaves, player.normalSavesNoSkill, player.hardSavesNoSkill, player.divineSavesNoSkill]:
+                packet.writeInt(stat)
+                
+            packet.writeShort(player.titleID).writeShort(len(player.titleList))
+            for title in player.titleList:
+                packet.writeShort(int(title - (title % 1)))
+                packet.writeByte(int(round((title % 1) * 10)))
+ 
+            packet.writeUTF(((str(player.fur) + ";" + player.playerLook.split(";")[1]) if player.fur != 0 else player.playerLook) + ";" + player.mouseColor)
+            packet.writeShort(player.shamanLevel)
+            
+            badges = list(map(int, player.shopBadges))
+            listBadges = []
+            for badge in badges:
+                if not badge in listBadges:
+                    listBadges.append(badge)
+
+            packet.writeShort(len(listBadges) * 2)
+            for badge in listBadges:
+                packet.writeShort(badge).writeShort(badges.count(badge))
+ 
+            stats = [[30, player.racingStats[0], 1500, 124], [31, player.racingStats[1], 10000, 125], [33, player.racingStats[2], 10000, 127], [32, player.racingStats[3], 10000, 126], [26, player.survivorStats[0], 1000, 120], [27, player.survivorStats[1], 800, 121], [28, player.survivorStats[2], 20000, 122], [29, player.survivorStats[3], 10000, 123], [42, player.defilanteStats[0], 1500, 288], [43, player.defilanteStats[1], 10000, 287], [44, player.defilanteStats[2], 100000, 286]]
+            packet.writeByte(len(stats))
+            for stat in stats:
+                packet.writeByte(stat[0]).writeInt(stat[1]).writeInt(stat[2]).writeShort(stat[3])
+
+            shamanBadges = player.shamanBadges
+            packet.writeByte(player.equipedShamanBadge).writeByte(len(shamanBadges))
+            
+            for shamanBadge in shamanBadges:
+                packet.writeByte(shamanBadge)
+                
+            points = self.getAdventurePoints()
+            packet.writeBoolean(points > 0)
+            packet.writeInt(points)
+            self.sendPacket(TFMCodes.game.send.Profile, packet.toByteArray())
+                
+    def sendRoomServer(self, gameType, serverType):
+        self.sendPacket(TFMCodes.game.send.Room_Type, gameType)
+        self.sendPacket(TFMCodes.game.send.Room_Server, serverType)
+                
+    def sendStaffChatMessage(self, type, message) -> None:
+        """
+        Sends a message in given staff channel.
+        """
+        for client in self.server.players.copy().values():
+            if(type == 3):
+                if(client.privLevel >= 7 and client.defaultLanguage == self.defaultLanguage):
+                    client.sendPacket(TFMCodes.game.send.Send_Staff_Chat, ByteArray().writeByte(1 if type == -1 else type).writeUTF(self.playerName).writeUTF(message).writeShort(0).writeShort(0).toByteArray())
+                    
+            elif(type == 4):
+                if(client.privLevel >= 7):
+                    client.sendPacket(TFMCodes.game.send.Send_Staff_Chat, ByteArray().writeByte(1 if type == -1 else type).writeUTF(self.playerName).writeUTF(message).writeShort(0).writeShort(0).toByteArray())
+                    
+            elif(type == 2):
+                if(client.privLevel >= 7 and client.defaultLanguage == self.defaultLanguage):
+                    client.sendPacket(TFMCodes.game.send.Send_Staff_Chat, ByteArray().writeByte(1 if type == -1 else type).writeUTF(self.playerName).writeUTF(message).writeShort(0).writeShort(0).toByteArray())
+                    
+            elif(type == 5):
+                if(client.privLevel >= 7):
+                    client.sendPacket(TFMCodes.game.send.Send_Staff_Chat, ByteArray().writeByte(1 if type == -1 else type).writeUTF(self.playerName).writeUTF(message).writeShort(0).writeShort(0).toByteArray())
+                    
+            elif(type == 9):
+                if(client.privLevel in [5, 9] or client.isFunCorpTeam == True):
+                    client.sendPacket(TFMCodes.game.send.Send_Staff_Chat, ByteArray().writeByte(1 if type == -1 else type).writeUTF(self.playerName).writeUTF(message).writeShort(0).writeShort(0).toByteArray())
+                    
+            elif(type == 8):
+                if(client.privLevel in [4, 9] or client.isLuaCrew == True):
+                    client.sendPacket(TFMCodes.game.send.Send_Staff_Chat, ByteArray().writeByte(1 if type == -1 else type).writeUTF(self.playerName).writeUTF(message).writeShort(0).writeShort(0).toByteArray())
+                    
+            elif(type == 10):
+                if(client.privLevel in [3, 9] or client.isFashionSquad == True):
+                    client.sendPacket(TFMCodes.game.send.Send_Staff_Chat, ByteArray().writeByte(1 if type == -1 else type).writeUTF(self.playerName).writeUTF(message).writeShort(0).writeShort(0).toByteArray())
+
+            elif(type == 7):
+                if(client.privLevel in [6, 9] or client.isMapCrew == True):
+                    client.sendPacket(TFMCodes.game.send.Send_Staff_Chat, ByteArray().writeByte(1 if type == -1 else type).writeUTF(self.playerName).writeUTF(message).writeShort(0).writeShort(0).toByteArray())
+
     def sendSwitchTribulle(self, isNew) -> None:
         """
         Switch to the new tribulle.
@@ -585,25 +831,84 @@ class Client:
         Sends packet to tribulle
         """
         self.sendPacket(TFMCodes.game.send.Tribulle_Packet, ByteArray().writeShort(code).writeBytes(result).toByteArray())
+                       
+    def startBulle(self, roomName) -> None:
+        if not self.isEnterRoom:
+            self.isEnterRoom = True
+            self.server.loop.call_later(0.8, lambda: self.enterRoom(roomName))
+            self.server.loop.call_later(6, setattr, self, "isEnterRoom", False)
+
+    def getAdventurePoints(self) -> int:
+        return 0
+         
+    def logMessage(self, message, whisper=''):
+        if not self.playerName in self.server.chatMessages:
+             messages = deque([], 60)
+             messages.append([time.strftime("%Y/%m/%d %H:%M:%S"), message, self.roomName, whisper])
+             self.server.chatMessages[self.playerName] = messages
+        else:
+            self.server.chatMessages[self.playerName].append([time.strftime("%Y/%m/%d %H:%M:%S"), message, self.roomName, whisper])
+         
+    def enterRoom(self, roomName):
+        roomName = roomName.replace("<", "&lt;")
+        self.roomFuncorps = []
         
-    def sendPacketWholeChat(self, chatName, code, result, isAll=False) -> None:
-        """
-        Sends packet to everyone in the specific chat.
-        """
-        for player in self.server.players.copy().values():
-            if player.playerCode != self.playerCode or isAll:
-                if player.playerName in self.server.chats[chatName]:
-                    player.sendTribullePacket(code, result)
-                    
-    def sendPacketWholeTribe(self, code, result, all=False) -> None:
-        """
-        Sends packet to everyone in the tribe.
-        """
-        for player in self.server.players.copy().values():
-            if player.playerCode != self.playerCode or all:
-                if player.tribeCode == self.tribeCode:
-                    player.sendTribullePacket(code, result)
-                    
+        if (roomName.startswith("*\x03") and not roomName == "*\x03" + self.tribeName and not roomName[2:] in self.invitedTribeHouses) or self.isPrisoned:
+            roomName = self.lastRoom
+            
+        if not roomName.startswith("*") and not (len(roomName) > 3 and roomName[2] == "-" and self.privLevel > 6):
+            roomName = "%s-%s" %(self.defaultLanguage.upper(), roomName)
+            
+        for rooms in ["\x03[Editeur]", "\x03[Totem]", "\x03[Tutorial]"]: #
+            if roomName.startswith(rooms) and not self.playerName == roomName.split(" ")[1]: # 
+                roomName = "%s-%s" %(self.langue, self.playerName) #
+        
+        self.roomName = roomName
+        self.sendRoomServer(2, 0)
+        self.sendEnterRoom(roomName)
+        self.server.addClientToRoom(self, roomName)
+        self.sendAnchors()
+        
+        for player in [*self.server.rooms[roomName].clients.values()]:
+            if self.playerName in player.friendsList and player.playerName in self.friendsList:
+                player.Tribulle.sendFriendChangedRoom(self.playerName)
+                
+        if self.tribeCode != 0:
+            self.Tribulle.sendTribeMemberChangeRoom()
+        
+        
+        
+        if self.room.isFunCorp:
+            for player in [*self.server.rooms[roomName].clients.values()]:
+                if player.privLevel in [5, 9] or player.isFunCorpTeam:
+                    self.roomFuncorps.append(player.playerName)
+            self.sendLangueMessage("", "<FC>$FunCorpActiveAvecMembres</FC>", ', '.join(map(str, self.roomFuncorps)))
+            
+        self.lastroom = self.roomName
+        
+        
+    def getPlayerData(self):
+        data = ByteArray()
+        data.writeUTF(self.playerName if self.playerFakeName == "" else self.playerFakeName)
+        data.writeInt(self.playerCode)
+        data.writeBoolean(self.isShaman)
+        data.writeBoolean(self.isDead)
+        if not self.isHidden:
+            data.writeShort(self.playerScore)
+        data.writeBoolean(self.hasCheese)
+        data.writeShort(self.titleID)
+        data.writeByte(self.titleStars)
+        data.writeByte(self.gender)
+        data.writeUTF("")
+        data.writeUTF("1;0,0,0,0,0,0,0,0,0,0") #if self.room.isBootcamp else (str(self.fur) + ";" + self.playerLook.split(";")[1] if self.fur != 0 else self.playerLook))
+        data.writeBoolean(False)
+        data.writeInt(int(self.tempMouseColor if not self.tempMouseColor == "" else self.mouseColor, 16))
+        data.writeInt(int(self.shamanColor, 16))
+        data.writeInt(0)
+        data.writeInt(int(self.playerNameColor, 16))
+        data.writeByte(0)
+        return data.toByteArray()
+          
     def updateDatabase(self) -> None: ########
         """
         Update the database

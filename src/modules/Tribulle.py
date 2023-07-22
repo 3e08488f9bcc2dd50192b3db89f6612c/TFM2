@@ -1,6 +1,5 @@
 import re
 import time
-from collections import deque
 from src.utils.TFMCodes import TFMCodes
 from src.utils.Utils import Utils
 from src.modules import ByteArray
@@ -30,7 +29,6 @@ class Tribulle:
                 player.tribeRanks = self.client.tribeRanks
 
     def parseTribulleCode(self, code, packet) -> None:
-        print(code)
         if code == TFMCodes.tribulle.recv.ST_ChangerDeGenre: # 10
             self.changeGender(packet)
         elif code == TFMCodes.tribulle.recv.ST_AjoutAmi: # 18
@@ -442,7 +440,6 @@ class Tribulle:
         """
         tribulleID = packet.readInt()
         silence_type = packet.readByte()
-        print(silence_type)
         silence_msg = packet.readUTF()
         self.client.sendTribullePacket(TFMCodes.tribulle.send.ET_ResultatDefinitModeSilence, ByteArray().writeInt(tribulleID).writeByte(1).toByteArray())
 
@@ -629,7 +626,11 @@ class Tribulle:
             player.marriage = ""
             player.lastDivorceTimer = time
         else:
-            self.Cursor['users'].update_one({'Username':playerName},{'$set':{'Marriage':''}})
+            r1 = self.Cursor['users'].find_one({'Username':self.client.marriage})
+            if r1:
+                dvr = r1['Marriage']
+            self.Cursor['users'].update_one({'Username':self.client.marriage},{'$set':{'Marriage':''}})
+            self.Cursor['users'].update_one({'Username':dvr},{'$set':{'Marriage':''}})
 
         self.client.marriage = ""
         self.client.lastDivorceTimer = time
@@ -717,7 +718,8 @@ class Tribulle:
             muteInfo = self.server.getMuteInfo(self.client.playerName)
             timeCalc = Utils.getHoursDiff(muteInfo[1])
             if timeCalc <= 0:
-                self.server.removeMute(self.client.playerName)
+                self.server.removeMute(self.client.playerName, "ServeurMute")
+                self.client.isMuted = False
             else:
                 self.client.sendMuteMessage(self.client.playerName, timeCalc, muteInfo[0], True)
                 return
@@ -731,7 +733,7 @@ class Tribulle:
             self.server.chats[chatName] = [self.client.playerName]
         elif chatName in self.server.chats and not self.client.playerName in self.server.chats[chatName]:
             self.server.chats[chatName].append(self.client.playerName)
-    
+        
         self.client.sendPacketWholeChat(chatName, TFMCodes.tribulle.send.ET_SignaleMessageCanal, ByteArray().writeUTF(self.client.playerName).writeInt(self.client.defaultLanguageID).writeUTF(chatName).writeUTF(message).toByteArray(), True)
         self.client.sendTribullePacket(TFMCodes.tribulle.send.ET_ResultatMessageCanal, ByteArray().writeInt(tribulleID).writeByte(1).toByteArray())
             
@@ -764,14 +766,15 @@ class Tribulle:
         if readPacket == None:
             p.writeByte(self.client.gender).writeInt(self.client.playerID)
         if self.client.marriage == "":
-            p.writeInt(0).writeUTF("").writeByte(0).writeInt(0).writeByte(0).writeByte(0).writeInt(1).writeUTF("").writeInt(0)
+            p.writeInt(0).writeUTF("").writeByte(0).writeInt(0).writeByte(0).writeBoolean(False).writeInt(1).writeUTF("").writeInt(0)
         else:
             player = self.server.players.get(self.client.marriage)
             if player == None:
                 rs = self.Cursor['users'].find_one({'Username':self.client.marriage})
             else:
-                rs = {'Marriage':self.client.marriage, 'PlayerID': player.playerID, 'Gender': player.gender, 'LastOn': player.lastOn}
-            p.writeInt(rs['PlayerID']).writeUTF(rs['Marriage'].lower()).writeByte(rs['Gender']).writeInt(rs['PlayerID']).writeByte(1).writeBoolean(self.server.checkConnectedUser(rs['Marriage'])).writeInt(4).writeUTF(player.roomName if player else "").writeInt(rs['LastOn'])
+                rs = {'Marriage':self.client.marriage, 'PlayerID': player.playerID, 'Gender': player.gender, 'LastOn': player.lastOn, 'Avatar': player.avatar}
+            p.writeInt(rs['PlayerID']).writeUTF(rs['Marriage']).writeByte(rs['Gender']).writeInt(rs['Avatar']).writeByte(1).writeBoolean(self.server.checkConnectedUser(rs['Marriage'])).writeInt(4).writeUTF(player.roomName if player else "").writeInt(rs['LastOn'])
+        
         self.client.openingFriendList = readPacket != None
         isOnline = []
         friendsOn = []
@@ -783,7 +786,7 @@ class Tribulle:
             player = self.server.players.get(friend)
                 
             if player != None:
-                infos[friend] = [player.playerID, ",".join(player.friendsList), player.marriage, player.gender, player.lastOn]
+                infos[friend] = [player.avatar, ",".join(player.friendsList), player.marriage, player.gender, player.lastOn, player.playerID]
                 if self.client.playerName in player.friendsList:
                     friendsOn.append(friend)
                 else:
@@ -792,12 +795,11 @@ class Tribulle:
 
         for name in friendsList:
             for rs in self.Cursor['users'].find({'Username':name}):
-                infos[rs['Username']] = [rs['Avatar'], rs['FriendsList'], rs['Marriage'], rs['Gender'], rs['LastOn']]
+                infos[rs['Username']] = [rs['Avatar'], rs['FriendsList'], rs['Marriage'], rs['Gender'], rs['LastOn'], rs['PlayerID']]
                 if self.client.playerName in map(str, filter(None, rs['FriendsList'].split(","))):
                     friendsOff.append(rs['Username'])
                 else:
                     isOffline.append(rs['Username'])
-
         playersNames = friendsOn + isOnline + friendsOff + isOffline
         if "" in playersNames:
             playersNames.remove("")
@@ -813,7 +815,7 @@ class Tribulle:
             isFriend = self.client.playerName in player.friendsList if player != None else self.client.playerName in map(str, filter(None, info[1].split(",")))
             genderID = player.gender if player else int(info[3])
             isMarriage = self.client.playerName == player.marriage if player else info[2] == self.client.playerName
-            p.writeInt(info[0]).writeUTF(playerName.lower()).writeByte(genderID).writeInt(info[0]).writeByte(1 if isFriend else 0).writeBoolean(self.server.checkConnectedUser(playerName)).writeInt(4 if isFriend and player != None else 1).writeUTF(player.roomName if isFriend and player != None else "").writeInt(info[4] if isFriend else 0)
+            p.writeInt(info[5]).writeUTF(playerName).writeByte(genderID).writeInt(info[0]).writeByte(1 if isFriend else 0).writeBoolean(self.server.checkConnectedUser(playerName)).writeInt(4 if isFriend and player != None else 1).writeUTF(player.roomName if isFriend and player != None else "").writeInt(info[4] if isFriend else 0)
         if readPacket == None:
             p.writeShort(len(self.client.ignoredsList))
 
@@ -831,7 +833,7 @@ class Tribulle:
             else:
                 p.writeUTF("")
                 p.writeInt(0)
-        self.client.sendPacket([60, 3], p.toByteArray())
+        self.client.sendPacket(TFMCodes.game.send.Tribulle_Packet, p.toByteArray())
         if not readPacket == None and not self.client.marriage == "":
             self.client.sendTribullePacket(15 if readPacket == "0" else 29, ByteArray().writeInt(self.client.tribulleID+1).writeByte(1).toByteArray())
 
@@ -859,7 +861,10 @@ class Tribulle:
         """
         tribulleID = packet.readInt()
         message = packet.readUTF()
-        self.client.sendPacketWholeTribe(TFMCodes.tribulle.send.ET_SignaleEnvoitTribuMessageCanal, ByteArray().writeUTF(self.client.playerName).writeUTF(message).toByteArray(), True)
+        if time.time() - self.client.msgTime > 3 and not self.server.checkMessage(message):
+            self.client.logMessage(message, 'Tribe')
+            self.client.sendPacketWholeTribe(TFMCodes.tribulle.send.ET_SignaleEnvoitTribuMessageCanal, ByteArray().writeUTF(self.client.playerName.lower()).writeUTF(message).toByteArray(), all=True)
+            self.client.msgTime = time.time()
 
     def sendTribeHistorique(self, packet) -> None:
         """
@@ -946,8 +951,8 @@ class Tribulle:
             packet.writeInt(info[5])
             packet.writeInt(info[2] if not self.server.checkConnectedUser(member) else 0)
             packet.writeByte(info[3])
-            packet.writeUTF(player.roomName if player != None else "")
             packet.writeInt(0)
+            packet.writeUTF(player.roomName if player != None else "")
         packet.writeShort(len(self.client.tribeRanks.split(";")))
 
         for rank in self.client.tribeRanks.split(";"):
@@ -1145,7 +1150,7 @@ class Tribulle:
                     muteInfo = self.server.getMuteInfo(self.client.playerName)
                     timeCalc = Utils.getHoursDiff(muteInfo[1])
                     if timeCalc <= 0:
-                        self.server.removeMute(self.client.playerName)
+                        self.server.removeMute(self.client.playerName, "ServeurMute")
                         self.client.isMuted = False
                     else:
                         self.client.sendMuteMessage(self.client.playerName, timeCalc, muteInfo[0], True)
@@ -1173,9 +1178,4 @@ class Tribulle:
                     if isCheck:
                         self.server.sendStaffMessage(f"The player <BV>{self.client.playerName}</BV> whispered <J>{playerName}</J> a blacklisted string <N2>[{message}]</N2>.", 7)
 
-                    if not self.client.playerName in self.server.chatMessages:
-                        messages = deque([], 60)
-                        messages.append([time.strftime("%Y/%m/%d %H:%M:%S"), message, self.client.roomName])
-                        self.server.chatMessages[self.client.playerName] = messages
-                    else:
-                        self.server.chatMessages[self.client.playerName].append([time.strftime("%Y/%m/%d %H:%M:%S"), message, self.client.roomName])
+                    self.client.logMessage(message, playerName)

@@ -40,6 +40,65 @@ class Packets:
             print("[%s] Packet not implemented - C: %s - CC: %s - packet: %s" %(self.client.ipAddress, C, CC, repr(packet.toByteArray())))
             
     def receivePackets(self):
+        @self.packet(args=['readUTF'])
+        async def Chat_Message(self, message):
+            message = message.replace("&amp;#", "&#").replace("<", "&lt;")
+            if self.client.isGuest:
+                self.client.sendLangueMessage("", "$Créer_Compte_Parler")
+                return
+                
+            elif message.startswith("!") and self.client.room.luaRuntime != None:
+                self.client.room.luaRuntime.invokeEvent("ChatCommand", (self.client.playerName, message[1:]))
+                if message[1:] in self.client.room.luaRuntime.HiddenCommands:
+                    return
+                
+            elif self.client.isHidden:
+                self.client.sendServerMessage("You can't speak while you are watching somebody.", True)
+                return
+                
+            elif not message == "" and len(message) < 256:
+                if self.client.isMuted:
+                    muteInfo = self.server.getMuteInfo(self.client.playerName)
+                    timeCalc = Utils.getHoursDiff(muteInfo[1])
+                    if timeCalc <= 0:
+                        self.server.removeMute(self.client.playerName, "ServeurMute")
+                        self.client.isMuted = False
+                    else:
+                        self.client.sendMuteMessage(self.client.playerName, timeCalc, muteInfo[0], True)
+                        return
+                if time.time() - self.client.msgTime > 3:
+                    if message != self.client.lastMessage:
+                        self.client.lastMessage = message
+                        self.client.room.sendAllChat(self.client.playerName if self.client.playerFakeName == "" else self.client.playerFakeName, message, 2 if self.client.isMumuted else self.server.checkMessage(message))
+                    else:
+                        self.client.sendLangueMessage("", "$Message_Identique")
+                    self.client.msgTime = time.time()
+                else:
+                    self.client.sendLangueMessage("", "$Doucement")
+                
+                self.client.logMessage(message)
+
+        @self.packet(args=['readUTF'])
+        async def Commands(self, command):
+            if time.time() - self.client.CMDTime > 1:
+                await self.client.Commands.parseCommand(command)
+                self.client.CMDTime = time.time()
+
+        @self.packet(args=["readUTF", "readUTF", "readUTF"])
+        async def Computer_Information(self, osLanguage, osName, flashVersion):
+            """
+            Information:
+                Receive most important computer information like os language, os name and flash version.
+                
+            Arguments:
+                osLanguage - User's operation system language code (iso2) like en, tr, pt, etc.
+                osName - User's operation system id like windows, linux and mac.
+                flashVersion - User's adobe flash version.
+            """
+            self.osLanguage = osLanguage
+            self.osVersion = osName
+            self.flashPlayerVersion = flashVersion
+        
         @self.packet(args=['readShort', 'readUTF', 'readUTF', 'readUTF', 'readByte', 'readUTF'])
         async def Correct_Version(self, version, lang, ckey, stand_type, _reserved, flashPlayerInfo):
             """
@@ -57,7 +116,7 @@ class Packets:
             self.flashPlayerInformation = flashPlayerInfo
             if stand_type == "StandAlone":
                 self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}</BV> connected with standalone.", 7)
-                self.sendFlashPlayerNotice = True
+                self.client.sendFlashPlayerNotice = True
             
             if ckey == self.server.swfInfo["ckey"] and version == int(self.server.swfInfo["version"]):
                 self.client.validatingVersion = True
@@ -65,21 +124,6 @@ class Packets:
             else:
                 print("[ERREUR] Invalid version or CKey (%s, %s) --> %s" %(version, ckey, self.client.ipAddress))
                 self.client.transport.close()
-
-        @self.packet(args=["readUTF", "readUTF", "readUTF"])
-        async def Computer_Information(self, osLanguage, osName, flashVersion):
-            """
-            Information:
-                Receive most important computer information like os language, os name and flash version.
-                
-            Arguments:
-                osLanguage - User's operation system language code (iso2) like en, tr, pt, etc.
-                osName - User's operation system id like windows, linux and mac.
-                flashVersion - User's adobe flash version.
-            """
-            self.osLanguage = osLanguage
-            self.osVersion = osName
-            self.flashPlayerVersion = flashVersion
         
         @self.packet(args=['readUTF', 'readUTF', 'readUTF', 'readUTF'])
         async def Create_Account(self, playerName, password, email, captcha):
@@ -217,6 +261,11 @@ class Packets:
             if self.client.privLevel >= 7:
                 await self.client.Cafe.deleteCafePost(postID)
         
+        @self.packet(args=['readUTF', 'readByte'])
+        async def Delete_Report(self, playerName, closeType):
+            if self.client.privLevel >= 7:
+                self.client.ModoPwet.deleteReport(playerName, closeType)
+        
         @self.packet
         async def Dummy(self):
             """
@@ -264,7 +313,13 @@ class Packets:
             self.client.defaultLanguageID = Utils.getLangueID(self.client.defaultLanguage)
             if "-" in self.client.defaultLanguage:
                 self.client.defaultLanguage = self.client.defaultLanguage.split("-")[1]
-            self.client.sendPacket(TFMCodes.game.send.Set_Language, ByteArray().writeUTF(langue).writeUTF(self.server.serverLanguagesInfo.get(self.client.defaultLanguage)[2]).writeBoolean(False).writeBoolean(True).writeUTF('').toByteArray())
+            self.client.sendPacket(TFMCodes.game.send.Set_Language, ByteArray().writeUTF(langue.upper()).writeUTF(self.server.serverLanguagesInfo.get(self.client.defaultLanguage)[2]).writeBoolean(False).writeBoolean(True).writeUTF('').toByteArray())
+
+        @self.packet(args=['readByte', 'readUTF'])
+        async def Get_Staff_Chat(self, _type, message):
+            if self.client.privLevel < 2:
+                return
+            self.client.sendStaffChatMessage(_type, message)
 
         @self.packet
         async def Language_List(self):
@@ -324,6 +379,34 @@ class Packets:
                 self.server.exceptionManager.setException(e)
                 self.server.exceptionManager.SaveException(self.client, "serveur", "packeterreur")
 
+        @self.packet(args=['readUTF', 'readBoolean'])
+        async def Modopwet_Ban_Hack(self, playerName, silent):
+            if self.client.privLevel >= 7:
+                self.server.banPlayer(playerName, 360, self.server.translateMessage("$MessageTriche"), self.client.playerName, silent)
+
+        @self.packet(args=['readUTF', 'readBoolean', 'readBoolean', 'readBoolean'])
+        async def Modopwet_Change_Langue(self, langue, modopwetOnlyPlayerReports, sortBy, reOpen):
+            if self.client.privLevel >= 7:
+                self.client.modoPwetLangue = langue.upper()
+                self.client.sendPacket(TFMCodes.game.send.Modopwet_Update_Language)
+                if reOpen:
+                    self.client.ModoPwet.openModoPwet(reOpen, modopwetOnlyPlayerReports, sortBy)
+
+        @self.packet(args=['readUTF'])
+        async def Modopwet_Chat_Log(self, playerName):
+            if self.client.privLevel >= 7:
+                self.client.ModoPwet.openChatLog(playerName)
+
+        @self.packet(args=['readBoolean', 'readByte'])
+        async def Modopwet_Notifications(self, isTrue, cmlen):
+            if self.client.privLevel >= 7:
+                self.client.isModoPwetNotifications = isTrue
+                length = cmlen
+                self.client.modopwetCommunityNotifications = []
+                while length > 0:
+                    self.client.modopwetCommunityNotifications.append(self.packet.readUTF())
+                    length -= 1
+
         @self.packet(args=['readUTF'])
         async def New_Survey(self, description):
             if self.client.privLevel != 9:
@@ -349,6 +432,13 @@ class Packets:
             else:
                 self.client.sendServerMessage("Your survey must require one valid option.", True)
 
+        @self.packet
+        async def Old_Protocol(self):
+            data = self.packet.readUTFBytes(self.packet.readShort())
+            if isinstance(data, (bytes, bytearray)):
+                data = data.decode()
+            await self.parsePacketUTF(data)
+
         @self.packet(args=['readBoolean'])
         async def Open_Cafe(self, _isopen):
             self.client.isCafeOpen = _isopen
@@ -356,6 +446,17 @@ class Packets:
         @self.packet(args=['readInt'])
         async def Open_Cafe_Topic(self, topicID):
             await self.client.Cafe.openCafeTopic(topicID)
+
+        @self.packet(args=['readBoolean'])
+        async def Open_Modopwet(self, isOpen):
+            if self.client.privLevel >= 7:
+                self.client.ModoPwet.openModoPwet(isOpen)
+                self.client.ModoPwet.sendAllModopwetLangues()
+                self.client.isModoPwet = isOpen
+                
+        @self.packet(args=['readUTF', 'readByte', 'readUTF'])
+        async def Player_Report(self, playerName, _type, comment):
+            self.client.ModoPwet.insertReport(playerName, _type, comment)
 
         @self.packet
         async def Reload_Cafe(self):
@@ -437,3 +538,8 @@ class Packets:
         packet2.writeByte((length & 127))
         packet.writeBytes(packet2.toByteArray()).writeByte(identifiers[0]).writeByte(identifiers[1]).writeBytes(data)
         self.client.transport.write(packet.toByteArray())
+        
+    async def parsePacketUTF(self, packet):
+        values = packet.split('\x01')
+        C, CC, values = ord(values[0][0]), ord(values[0][1]), values[1:]
+        print(C, CC)

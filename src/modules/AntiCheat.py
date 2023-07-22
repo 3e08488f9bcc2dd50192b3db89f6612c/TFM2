@@ -18,7 +18,7 @@ class AntiCheat:
     def checkPacket(self, packet) -> bool:
         r1 = self.getHackType(packet)
         if r1 != "Unknown":
-            self.server.sendBanPunishment(self.client.playerName, self.info["ban_hours"], "Hack", "Anti-Cheat", True)
+            self.server.banPlayer(self.client.playerName, self.info["ban_hours"], "Hack", "Anti-Cheat", True)
             return True
         return False
         

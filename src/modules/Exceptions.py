@@ -26,8 +26,6 @@ class ClientException():
             self.client.sendServerMessage("Player ["+playerName+"] is already muted, please wait.", True)
         elif exType == "usernotmuted":
             self.client.sendServerMessage("The player "+playerName+" is not muted.", True)
-        elif exType == "norecordfound":
-            self.client.sendServerMessage("The map "+playerName+" don't have a record.", True)
         elif exType == "noonlinestaff":
             self.client.sendServerMessage("Don't have any online "+playerName+" at moment.", True)
 

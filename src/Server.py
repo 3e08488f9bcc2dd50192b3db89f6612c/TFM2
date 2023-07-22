@@ -1,14 +1,16 @@
 import asyncio
 import psutil
+import pygeoip
 import pymongo
 import random
 import os
 import re
 import string
-from api.Api import Api
 from colorconsole import win
-from src import Client
-from src.modules import Config, Exceptions
+from src import Client, Room
+from src.modules import ByteArray, Config, Exceptions
+from src.utils.TFMCodes import TFMCodes
+from src.utils.Utils import Utils
 
 class Server(asyncio.Transport):
     def __init__(self):
@@ -17,6 +19,7 @@ class Server(asyncio.Transport):
         self.lastCafeTopicID = 0
         self.lastCafePostID = 0
         self.lastChatID = 0
+        self.lastReportID = 0
         self.lastTribeID = 0
     
         # Float/Double
@@ -40,6 +43,7 @@ class Server(asyncio.Transport):
         
         # Other
         self.config = Config.ConfigParser()
+        self.geoIPData = pygeoip.GeoIP('./include/GeoIP.dat')
         self.exceptionManager = Exceptions.ServeurException()
         #self.api = None
         self.Cursor = None
@@ -52,8 +56,34 @@ class Server(asyncio.Transport):
         self.eventInfo = self.config.readFile("./include/settings/event.json")
         self.serverInfo = self.config.readFile("./include/settings/gameinfo.json")
         self.serverLanguagesInfo = self.config.readFile("./include/settings/languages.json")
+        self.serverReports = self.config.readFile("./include/settings/reports.json")
         self.swfInfo = self.config.readFile("./include/settings/swf_properties.json")
         self.titleInfo = self.config.readFile("./include/settings/titles.json", False)
+
+    def banPlayer(self, playerName, hours, reason, modName, silent):
+        player = self.players.get(playerName)
+        if self.checkExistingUser(playerName):
+            if modName == "ServeurBan":
+                msg = f"The player <BV>{playerName}</BV> was banned for {hours} hour(s). Reason: {reason}" # Vote Populaire.
+            elif self.checkConnectedUser(playerName):
+                msg = f"{modName} banned the player <BV>{playerName}</BV> for {hours}h ({reason})."
+            else:
+                msg = f"{modName} offline banned the player <BV>{playerName}</BV> for {hours}h ({reason})."
+            self.removeBan(playerName, "ServeurBan")
+            
+            if playerName in self.serverReports:
+                self.serverReports[playerName]["state"] = "banned"
+                self.serverReports[playerName]['banhours'] = hours
+                self.serverReports[playerName]['banreason'] = reason
+                self.serverReports[playerName]['bannedby'] = modName
+
+            self.userBanCache.append(playerName)
+            self.Cursor['usertempban'].insert_one({'Username':playerName,'Reason':reason,'Time':int(Utils.getTime() + (hours * 60 * 60))})
+            if player != None:
+                player.sendBanMessage(hours, reason, silent)
+            self.sendStaffMessage(msg, 7, False)
+            self.saveCasier(playerName, "BAN", modName, hours, reason)
+            self.receiveKarma(playerName)
 
     def checkAlreadyExistingGuest(self, playerName) -> str:
         """
@@ -90,6 +120,7 @@ class Server(asyncio.Transport):
         """
         i = 0
         while i < len(self.badWords):
+            print('x')
             if re.search("[^a-zA-Z]*".join(self.badWords[i]), message.lower()):
                 return True
             i += 1
@@ -103,7 +134,7 @@ class Server(asyncio.Transport):
         if rs:
             return [rs["Reason"], rs["Time"]]
         else:
-            return ["", 0]
+            return []
 
     def getEmailAddressCount(self, emailAddress) -> int:
         """
@@ -127,7 +158,7 @@ class Server(asyncio.Transport):
         if rs:
             return [rs['Reason'], rs['Time']]
         else:
-            return ["", 0]
+            return []
 
     def getPlayerAvatar(self, playerName) -> int:
         """
@@ -155,11 +186,24 @@ class Server(asyncio.Transport):
             else:
                 return -1
 
+    def getPlayerIP(self, playerName) -> str:
+        """
+        Receive the player's ip address.
+        """
+        player = self.players.get(playerName)
+        return Utils.EncodeIP(player.ipAddress) if player != None else "offline"
+
     def getPlayerName(self, playerID) -> str:
+        """
+        Receive the player name
+        """
         rs = self.Cursor['users'].find_one({'PlayerID':playerID})
         return rs['Username'] if rs else ""
 
     def getPlayerTribeCode(self, playerName) -> int:
+        """
+        Receive the player's tribe unique code.
+        """
         player = self.server.players.get(playerName)
         if playerName:
             return player.tribeCode
@@ -168,38 +212,108 @@ class Server(asyncio.Transport):
         return rs['TribeCode'] if rs else 0
 
     def getPlayerTribeRank(self, playerName) -> str:
+        """
+        Receive the player's rank in the tribe.
+        """
         player = self.players.get(playerName)
         if player != None:
             return self.players[playerName].tribeRank
         rs = self.Cursor['users'].find_one({'Username':playerName})
         return rs['TribeRank'] if rs else ""
 
+    def getProfileColor(self, playerName) -> str:
+        """
+        Receive the player's profile color.
+        """
+        if playerName.privLevel == 9:
+            return "EB1D51"
+        elif playerName.privLevel == 8:
+            return "BABD2F"
+        elif playerName.privLevel == 6 or playerName.isMapCrew:
+            return "2F7FCC"
+        elif playerName.privLevel == 5 or playerName.isFunCorpTeam:
+            return "F89F4B"
+        return "009D9D"
+
     def getTribeMembers(self, tribeCode) -> list:
+        """
+        Receive all members from the tribe.
+        """
         rs = self.Cursor['tribe'].find_one({'Code':tribeCode})
         return rs['Members'].split(",") if rs else []
 
     def getTribeHistorique(self, tribeCode) -> str:
+        """
+        Receive the tribe history.
+        """
         rs = self.Cursor['tribe'].find_one({'Code':tribeCode})
         return rs['Historique'] if rs else ""
 
-    def removeBan(self, playerName) -> None:
+    def mutePlayer(self, playerName, hours, reason, modName, silent) -> None:
+        player = self.players.get(playerName)
+        if player != None:
+            self.sendStaffMessage(f"{modName} muted the player {playerName} for {hours}h ({reason})", 7, False)
+            self.removeMute(playerName, "ServeurMute")
+            
+            if playerName in self.serverReports:
+                self.serverReports[playerName]['isMuted'] = True
+                self.serverReports[playerName]['muteHours'] = hours
+                self.serverReports[playerName]['muteReason'] = reason
+                self.serverReports[playerName]['mutedBy'] = modName
+                
+            player.isMuted = True
+            player.sendMuteMessage(playerName, hours, reason, silent)
+            if not silent:
+                player.sendMuteMessage(playerName, hours, reason, False)
+            self.userMuteCache.append(playerName)
+            self.Cursor['usertempmute'].insert_one({'Username':playerName,'Time':int(Utils.getTime() + (hours * 60 * 60)),'Reason':reason})
+            self.saveCasier(playerName, "MUTE", modName, hours, reason)
+            self.receiveKarma(playerName)
+
+    def receiveKarma(self, playerName) -> None:
+        if playerName in self.serverReports:
+            for name in self.serverReports[playerName]["reporters"]:  
+                player = self.players.get(name) 
+                if player != None:
+                    player.playerKarma += 1
+                    player.sendServerMessage(f"Your report regarding the player {playerName} has been handled. (karma: {str(player.playerKarma)})", True)
+
+    def removeBan(self, playerName, modName) -> None:
         """
         Removes ban on given player.
         """
+        if playerName in self.serverReports:
+            self.serverReports[playerName]["state"] = "online" if self.checkConnectedUser(playerName) else "disconnected"
+            self.serverReports[playerName]['banhours'] = 0
+            self.serverReports[playerName]['banreason'] = ""
+            self.serverReports[playerName]['bannedby'] = ""
+        
         if playerName in self.userBanCache:
             self.userBanCache.remove(playerName)
         self.Cursor['usertempban'].delete_one({'Username':playerName})
+        if modName != "ServeurBan":
+            self.sendStaffMessage(f"{modName} unbanned the player {playerName}.", 7, False)
+            self.saveCasier(playerName, "UNBAN", modName, 0, "")
     
-    def removeMute(self, playerName) -> None:
+    def removeMute(self, playerName, modName) -> None:
         """
         Removes mute on given player.
         """
+        if playerName in self.serverReports:
+            self.serverReports[playerName]['isMuted'] = False
+            self.serverReports[playerName]['muteHours'] = 0
+            self.serverReports[playerName]['muteReason'] = ""
+            self.serverReports[playerName]['mutedBy'] = ""
+        
         if playerName in self.userMuteCache:
             self.userMuteCache.remove(playerName)
         self.Cursor['usertempmute'].delete_one({'Username':playerName})
+        if modName != "ServeurMute":
+            self.sendStaffMessage(f"{modName} unmuted the player {playerName}.", 7, False)
+            self.saveCasier(playerName, "UNMUTE", modName, 0, "")
 
-    def sendBanPunishment(self, playerName, hours, reason, modName, silent=False): #########
-        pass
+    def saveCasier(self, playerName, state, mod, duration, reason="") -> None:   
+        self.Cursor['casierlog'].insert_one({'Name':playerName,'IP':self.getPlayerIP(playerName),'State':state,'Timestamp':Utils.getTime(),'Moderator':mod,'Time':duration,'Reason':reason})
 
     def sendConnectionInformation(self) -> None:
         """
@@ -211,20 +325,20 @@ class Server(asyncio.Transport):
         T.cprint(15, 0, "[#] Server Debug: ")
         T.cprint(1,  0,  f"{self.serverInfo['server_debug']}\n")
         
-        T.cprint(15, 0, "[#] Initialized ports: ")
-        T.cprint(10, 0, f"{self.serverInfo['game_ports']}\n")
+        T.cprint(15, 0, "[#] Server Initialized ports: ")
+        T.cprint(10, 0, f"{self.serverInfo['server_ports']}\n")
         
         T.cprint(15, 0, "[#] Server Name: ")
         T.cprint(12, 0, f"{self.serverInfo['game_name']}\n")
         
         T.cprint(15, 0, "[#] Server IP: ")
-        T.cprint(13, 0, f"{self.serverInfo['game_ip']}\n")
+        T.cprint(13, 0, f"{self.serverInfo['server_ip']}\n")
         if self.serverInfo["server_debug"]:
             T.cprint(15, 0, "[#] Server Version: ")
             T.cprint(14, 0, f"1.{self.swfInfo['version']}\n")
             
             T.cprint(15, 0, "[#] Server Connection Key: ")
-            T.cprint(13, 0, f"{self.swfInfo['ckey']}\n")
+            T.cprint(11, 0, f"{self.swfInfo['ckey']}\n")
             
             if len(self.swfInfo["packetKeys"]) > 0:
                 T.cprint(15, 0, "[#] Server Packet_Keys: ")
@@ -245,6 +359,22 @@ class Server(asyncio.Transport):
         T.cprint(15, 0, "")
         return
 
+    def sendMessageAll(self, minLevel, message):
+        for player in self.players.copy().values():
+            if player.privLevel == minLevel:
+                player.sendPacket(TFMCodes.game.send.Message, ByteArray().writeUTF(message).toByteArray())
+            else:
+                if minLevel == 3 and player.isFashionSquad:
+                    player.sendPacket(TFMCodes.game.send.Message, ByteArray().writeUTF(message).toByteArray())
+                elif minLevel == 4 and player.isLuaCrew:
+                    player.sendPacket(TFMCodes.game.send.Message, ByteArray().writeUTF(message).toByteArray())
+                elif minLevel == 5 and player.isFunCorpTeam:
+                    player.sendPacket(TFMCodes.game.send.Message, ByteArray().writeUTF(message).toByteArray())
+                elif minLevel == 6 and player.isMapCrew:
+                    player.sendPacket(TFMCodes.game.send.Message, ByteArray().writeUTF(message).toByteArray())
+                elif minLevel == 7 and player.privLevel >= 7:
+                    player.sendPacket(TFMCodes.game.send.Message, ByteArray().writeUTF(message).toByteArray())
+
     def sendStaffMessage(self, message, minLevel, tab=False) -> None:
         """
         Send a private message in #Server channel.
@@ -257,10 +387,30 @@ class Server(asyncio.Transport):
             if client.privLevel >= minLevel:
                 client.sendServerMessage(message, tab)
 
+
+    def translateMessage(self, message):
+        return ""
+
+    def addClientToRoom(self, player, roomName): # Cooming soon
+        if roomName in self.rooms:
+            self.rooms[roomName].addClient(player)
+        else:
+            room = Room.Room(self, roomName, player)
+            self.rooms[roomName] = room
+            room.addClient(player, True)
+            #if room.minigame != "":
+            #    room.loadLuaModule(room.minigame)
+            #else:
+            #    room.mapChange2()
+            
+    def saveDatabase(self):
+        pass
+
     def startServer(self) -> None:
         """
         Obviously
         """
+        
         if self.serverInfo["db_password"] != "":
             self.Cursor = pymongo.MongoClient(f"mongodb://{self.serverInfo['db_username']}:{self.serverInfo['db_password']}@{self.serverInfo['db']}")['transformice']
         else:
@@ -272,8 +422,8 @@ class Server(asyncio.Transport):
         self.lastTribeID = self.getConfigID("lastTribeID") # OK
         
         
-        for port in self.serverInfo["game_ports"]:
-            self.loop.run_until_complete(self.loop.create_server(lambda: Client.Client(self, self.Cursor), self.serverInfo["game_ip"], port))
-        
+        for port in self.serverInfo["server_ports"]:
+            self.loop.run_until_complete(self.loop.create_server(lambda: Client.Client(self, self.Cursor), self.serverInfo["server_ip"], port))
         self.sendConnectionInformation()
+                
         self.loop.run_forever()
