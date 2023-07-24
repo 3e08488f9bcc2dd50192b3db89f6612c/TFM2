@@ -7,6 +7,8 @@ class ClientException():
     def Invoke(self, exType, playerName="", functionName="") -> None:
         if exType == "unknownuser":
             self.client.sendServerMessage("The supplied argument isn't a valid nickname.", True)
+        elif exType == "invalidIP":
+            self.client.sendServerMessage("The supplied argument isn't a valid IP Address.", True)
         elif exType == "moreargs":
             self.client.sendServerMessage("You need more arguments to use this command.", True)
         elif exType == "requireFC":

@@ -8,6 +8,9 @@ class Room:
         self.server = server
         self.creator = creatorClient
         
+        # String
+        self.langue = ""
+        
         # List
         self.anchors = []
         
@@ -20,6 +23,31 @@ class Room:
         # Boolean
         self.isBootcamp = False
         self.isFunCorp = False
+        self.isTribeHouse = False
+        
+    def getPlayerCount(self):
+        return len(list(filter(lambda player: not player.isHidden, self.clients.copy().values())))
+        
+    def removeClient(self, player):
+        if player.playerName in self.clients:
+            if self.isFunCorp:
+                for player in self.clients.copy().values():
+                    player.resetFuncorpEffects()
+                    player.sendLangueMessage("", "<FC>$FunCorpDesactive</FC>")
+                    self.isFuncorp = False
+                    
+            del self.clients[player.playerName]
+            #player.resetPlay()
+            player.isDead = True
+            player.playerScore = 0
+            player.sendPlayerDisconnect()
+            
+            
+            if len(self.clients) == 0:
+                del self.server.rooms[self.name]
+            
+            if self.luaRuntime != None:
+                self.luaRuntime.invokeEvent("PlayerLeft", (player.playerName))
         
     def addClient(self, player, newRoom=False):
         self.clients[player.playerName] = player

@@ -1,5 +1,7 @@
-import time
 import datetime
+import time
+import hashlib
+import re
 from src.modules import ByteArray
 
 class Utils:
@@ -52,4 +54,20 @@ class Utils:
     @staticmethod
     def DecodeIP(ip) -> str:
         ip = ip[1:]
-        return '.'.join([hex(int(x)+256)[3:].upper() for x in ip.split('.')])
+        result = []
+        for i in ip.split('.'):
+            if int(i, 16):
+                result.append(int(i, 16))
+            else:
+                result.append(int(i))
+        result = [str(i) for i in result]
+        return '.'.join(result)
+        
+    @staticmethod
+    def isValidIP(ip):
+        return re.match(r'^#(?:[0-9A-Fa-f]{2}\.){3}[0-9A-Fa-f]{2}$', ip)
+    
+    @staticmethod
+    def ipColor(ip):
+        _hash = hashlib.sha1(ip.encode('utf-8'))
+        return _hash.hexdigest()[:6]

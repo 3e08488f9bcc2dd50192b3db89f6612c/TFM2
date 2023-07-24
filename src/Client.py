@@ -1,5 +1,7 @@
 import asyncio
 import datetime
+import json
+import pycountry_convert
 import random
 import time
 from collections import deque
@@ -24,6 +26,7 @@ class Client:
         self.isFunCorpTeam = False
         self.isGuest = False
         self.isHidden = False
+        self.isLuaAdmin = False
         self.isLuaCrew = False
         self.isMapCrew = False
         self.isModoPwet = False
@@ -39,7 +42,7 @@ class Client:
         self.validatingVersion = False
 
         # Integer
-        self.banHours = 0
+        self.aventure_points = 0
         self.bootcampCount = 0
         self.cheeseCount = 0
         self.defaultLanguageID = 0
@@ -60,6 +63,7 @@ class Client:
         self.normalSavesNoSkill = 0
         self.pet = 0
         self.petEnd = 0
+        self.ping = 0
         self.playerCode = 0
         self.playerID = 0
         self.playerKarma = 0
@@ -91,11 +95,15 @@ class Client:
         self.aventureInfo = ""
         self.avatar = ""
         self.currentCaptcha = ""
+        self.countryCode = ""
+        self.countryContinent = ""
+        self.countryName = ""
         self.defaultLanguage = ""
         self.emailAddress = ""
         self.flashPlayerVersion = ""
         self.flashPlayerInformation = ""
         self.ipAddress = ""
+        self.ipColor = ""
         self.lastMessage = ""
         self.lastRoom = ""
         self.marriage = ""
@@ -156,14 +164,17 @@ class Client:
         self.survivorStats = [0, 0, 0, 0]
         self.titleList = []
         self.tribeInvite = []
+        self.voteBan = []
 
         # Loops
         self.loop = asyncio.get_event_loop()
         
-        # Other
+        # Timers
         self.awakeTimer = None
         self.CMDTime = time.time()
         self.msgTime = time.time()
+        self.pingTime = time.time()
+        self.room = None
         self.transport = None
          
     def connection_made(self, transport: asyncio.Transport) -> None:
@@ -221,6 +232,9 @@ class Client:
             if self.playerName in self.server.serverReports:
                 if not self.server.serverReports[self.playerName]["state"] in ["banned", "deleted"]:
                     self.server.serverReports[self.playerName]["state"] = "disconnected"
+                    
+        if self.room != None:
+            self.room.removeClient(self)
                     
             self.updateDatabase()
         self.transport.close()
@@ -297,10 +311,12 @@ class Client:
                         i += 1
                     self.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(11).writeShort(len(p.toByteArray())).writeBytes(p.toByteArray()).writeShort(0).toByteArray())
                     return
-            else:
-                # Player
-                if not self.fillLoginInformation(playerName, password):
-                    return
+                else:
+                    playerName = self.server.getPlayerName(playerName)
+        
+        if not self.fillLoginInformation(playerName, password):
+            if not self.isGuest:
+                return
         
         self.playerCode += 1
         self.server.players[self.playerName] = self
@@ -309,10 +325,12 @@ class Client:
         #    await asyncio.sleep(10)
         #    self.transport.close()
         #    return
-        #self.ipDetails = self.receiveIPDetails(self.ipAddress)
+        self.loginTime = Utils.getTime()
+        self.logConnection()
         self.sendLoginSourisInfo()
         self.sendSwitchTribulle(True)
-        self.loginTime = Utils.getTime()
+        self.sendServerPartners()
+        self.sendPing()
         if not self.isGuest:
             # Staff Positions
             if "FashionSquad" in self.playerRoles:
@@ -324,13 +342,13 @@ class Client:
             if "MapCrew" in self.playerRoles:
                 self.isMapCrew = True
                 
-            self.logConnection()
             self.sendPlayerIdentification()
             self.sendTimeStamp()
             self.fillTribeInformation(self.tribeCode)
             self.Tribulle.sendFriendsList(None)
             self.sendModInfo(True)
             self.sendDefaultChat()
+            self.sendAventurePoints()
             
             for player in self.server.players.values():
                 if self.playerName in player.friendsList and player.playerName in self.friendsList:
@@ -343,7 +361,7 @@ class Client:
                 self.server.serverReports[self.playerName]["state"] = "online"
         else:
             self.sendPlayerIdentification()
-            
+        
             
             
 
@@ -363,7 +381,7 @@ class Client:
         """
         Login stage 2
         """
-        if self.server.checkConnectedUser(playerName):
+        if self.server.checkConnectedUser(playerName) or len(playerName) == 0:
             self.server.loop.call_later(2, lambda: self.sendPacket(TFMCodes.game.send.Login_Result, ByteArray().writeByte(1).writeUTF("").writeUTF("").toByteArray()))
             return False
         
@@ -433,7 +451,6 @@ class Client:
             self.divineModeTitleList = list(map(float, filter(None, rs['DivineModeTitleList'].split(","))))
             self.eventTitleList = list(map(float, filter(None, rs['EventTitleList'].split(","))))
             self.staffTitleList = list(map(float, filter(None, rs['StaffTitleList'].split(","))))
-            self.banHours = rs['BanHours']
             self.shamanLevel = rs['ShamanLevel']
             self.shamanExp = rs['ShamanExp']
             self.shamanExpNext = rs['ShamanExpNext']
@@ -466,7 +483,7 @@ class Client:
             self.equipedShamanBadge = rs['EquipedShamanBadge']
             self.avatar = rs["Avatar"]
             self.totemInfo = rs["TotemInfo"]
-            self.aventureInfo = rs["AdventureInfo"]
+            self.aventureInfo = json.loads(rs["AdventureInfo"])
             self.playerLetters = rs["Letters"]
             self.playerTime = rs["Time"]
             self.playerKarma = rs["Karma"]
@@ -487,7 +504,24 @@ class Client:
             
     def logConnection(self):
         country = self.server.geoIPData.country_name_by_addr(self.ipAddress)
-        self.Cursor['loginlog'].insert_one({'Username':self.playerName, 'IP':Utils.EncodeIP(self.ipAddress), 'Country':country if country != "" else "localhost", 'Time': Utils.getDate(), 'Community': self.defaultLanguage, 'ConnectionID':self.server.serverInfo["game_name"]})
+        country_code = self.server.geoIPData.country_code_by_addr(self.ipAddress)
+        self.countryName = country if country != "" else "localhost"
+        self.countryCode = country_code if country_code != "" else "None"
+        if self.countryName != "localhost":
+            self.countryContinent = pycountry_convert.convert_continent_code_to_continent_name(pycountry_convert.country_alpha2_to_continent_code(pycountry_convert.country_name_to_country_alpha2(self.countryName)))
+        else:
+            self.countryContinent = "None"
+        self.ipColor = Utils.ipColor(Utils.EncodeIP(self.ipAddress))
+        if not self.isGuest:
+            self.Cursor['loginlog'].insert_one({'Username':self.playerName, 'IP':Utils.EncodeIP(self.ipAddress), 'Country':self.countryName, 'IPColor': self.ipColor, 'Time': Utils.getDate(), 'Community': self.defaultLanguage, 'ConnectionID':self.server.serverInfo["game_name"]})
+            
+    def logMessage(self, message, whisper=''):
+        if not self.playerName in self.server.chatMessages:
+             messages = deque([], 60)
+             messages.append([time.strftime("%Y/%m/%d %H:%M:%S"), message, self.roomName, whisper])
+             self.server.chatMessages[self.playerName] = messages
+        else:
+            self.server.chatMessages[self.playerName].append([time.strftime("%Y/%m/%d %H:%M:%S"), message, self.roomName, whisper])
             
     def sendAccountTime(self) -> None:
         """
@@ -499,6 +533,14 @@ class Client:
            self.Cursor['account'].insert_one({'Ip':self.ipAddress,'Time':eventTime})
         else:
            self.Cursor['account'].update_one({'Ip':self.ipAddress},{'$set':{'Time':eventTime}})
+            
+    def sendAventurePoints(self):
+        points = 0
+        for info in self.aventureInfo:
+            r1 = info["adv_points"]
+            if r1 > 0:
+                points += r1
+        self.aventure_points = points
             
     def sendAnchors(self) -> None:
         """
@@ -522,7 +564,7 @@ class Client:
         self.sendPacket(TFMCodes.game.send.Correct_Version, ByteArray().writeUnsignedInt(len(self.server.players)).writeUTF(lang).writeUTF('').writeInt(self.server.swfInfo["auth_key"]).writeBoolean(False).toByteArray())
         self.sendPacket(TFMCodes.game.send.Banner_Login, ByteArray().writeBoolean(True).writeByte(self.server.eventInfo["adventure_id"]).writeShort(256).toByteArray())
         self.sendPacket(TFMCodes.game.send.Image_Login, ByteArray().writeUTF(self.server.eventInfo["adventure_img"]).toByteArray())
-        self.sendPacket(TFMCodes.game.send.Verify_Code, ByteArray().writeInt(self.verifycoder).toByteArray())
+        self.sendPacket(TFMCodes.game.send.Init_Authorization, ByteArray().writeInt(self.verifycoder).toByteArray())
                 
     def sendDefaultChat(self) -> None:
         """
@@ -569,6 +611,9 @@ class Client:
         for arg in args:
             packet.writeUTF(arg)
         self.room.sendAllOthers(self, TFMCodes.game.send.Message_Langue, packet.toByteArray())
+              
+    def sendLogMessage(self, message):
+        self.sendPacket(TFMCodes.game.send.Log_Message, ByteArray().writeByte(0).writeUTF("").writeUnsignedByte((len(message) >> 16) & 0xFF).writeUnsignedByte((len(message) >> 8) & 0xFF).writeUnsignedByte(len(message) & 0xFF).writeBytes(message).toByteArray())
               
     def sendLoginSourisInfo(self) -> None:
         """
@@ -637,22 +682,7 @@ class Client:
             player = self.server.players.get(playerName)
             if player:
                 player.sendLangueMessage("", "<ROSE>$MuteInfo1", hours, reason, isAll=False)
-              
-    def sendPunishmentPopup(self):
-        if self.receivePunishmentPopup:
-            amount = random.randint(1000, 9999)
-            self.sendPacket(TFMCodes.game.send.Take_Cheese_Popup, ByteArray().writeShort(amount).toByteArray())
-            self.shopCheeses -= amount
-            if self.shopCheeses < 0:
-                self.shopCheeses = 0
-            self.receivePunishmentPopup = False
-              
-    def sendServerMessage(self, message, tab=False) -> None:
-        """
-        Sends message in #Server
-        """
-        self.sendPacket(TFMCodes.game.send.Server_Message, ByteArray().writeBoolean(tab).writeUTF(message).writeByte(0).writeUTF("").toByteArray())
-        
+                
     def sendPacketWholeChat(self, chatName, code, result, isAll=False) -> None:
         """
         Sends packet to everyone in the specific chat.
@@ -670,6 +700,16 @@ class Client:
             if player.playerCode != self.playerCode or all:
                 if player.tribeCode == self.tribeCode:
                     player.sendTribullePacket(code, result)
+        
+    def sendPing(self):
+        self.ping += 1
+        if self.ping > 255:
+            self.ping = 0
+        self.sendPacket(TFMCodes.game.send.Ping, ByteArray().writeByte(1).writeByte(self.ping).toByteArray())
+        self.pingTime = time.time()
+        
+    def sendPlayerDisconnect(self):
+        self.room.sendAll(TFMCodes.old.send.Player_Disconnect, [self.playerCode])
         
     def sendPlayerIdentification(self) -> None:
         """
@@ -771,14 +811,36 @@ class Client:
             for shamanBadge in shamanBadges:
                 packet.writeByte(shamanBadge)
                 
-            points = self.getAdventurePoints()
+            points = self.aventure_points
             packet.writeBoolean(points > 0)
             packet.writeInt(points)
             self.sendPacket(TFMCodes.game.send.Profile, packet.toByteArray())
                 
+    def sendPunishmentPopup(self):
+        if self.receivePunishmentPopup:
+            amount = random.randint(1000, 9999)
+            self.sendPacket(TFMCodes.game.send.Take_Cheese_Popup, ByteArray().writeShort(amount).toByteArray())
+            self.shopCheeses -= amount
+            if self.shopCheeses < 0:
+                self.shopCheeses = 0
+            self.receivePunishmentPopup = False
+                
+    def sendServerMessage(self, message, tab=False) -> None:
+        """
+        Sends message in #Server
+        """
+        self.sendPacket(TFMCodes.game.send.Server_Message, ByteArray().writeBoolean(tab).writeUTF(message).writeByte(0).writeUTF("").toByteArray())
+                        
     def sendRoomServer(self, gameType, serverType):
         self.sendPacket(TFMCodes.game.send.Room_Type, gameType)
         self.sendPacket(TFMCodes.game.send.Room_Server, serverType)
+                
+    def sendServerPartners(self):
+        p = ByteArray()
+        p.writeUnsignedShort(len(self.server.serverPartners))
+        for partner in self.server.serverPartners:
+            p.writeUTF(partner["name"]).writeUTF(partner["url"])
+        self.sendPacket(TFMCodes.game.send.Community_Partner, p.toByteArray())
                 
     def sendStaffChatMessage(self, type, message) -> None:
         """
@@ -837,18 +899,12 @@ class Client:
             self.isEnterRoom = True
             self.server.loop.call_later(0.8, lambda: self.enterRoom(roomName))
             self.server.loop.call_later(6, setattr, self, "isEnterRoom", False)
-
-    def getAdventurePoints(self) -> int:
-        return 0
-         
-    def logMessage(self, message, whisper=''):
-        if not self.playerName in self.server.chatMessages:
-             messages = deque([], 60)
-             messages.append([time.strftime("%Y/%m/%d %H:%M:%S"), message, self.roomName, whisper])
-             self.server.chatMessages[self.playerName] = messages
-        else:
-            self.server.chatMessages[self.playerName].append([time.strftime("%Y/%m/%d %H:%M:%S"), message, self.roomName, whisper])
-         
+                    
+    def resetFuncorpEffects(self):
+        self.playerFakeName = ""
+        self.tempMouseColor = ""
+        self.playerNameColor = "95d9d6"
+                                        
     def enterRoom(self, roomName):
         roomName = roomName.replace("<", "&lt;")
         self.roomFuncorps = []
@@ -862,6 +918,9 @@ class Client:
         for rooms in ["\x03[Editeur]", "\x03[Totem]", "\x03[Tutorial]"]: #
             if roomName.startswith(rooms) and not self.playerName == roomName.split(" ")[1]: # 
                 roomName = "%s-%s" %(self.langue, self.playerName) #
+        
+        if self.room != None:
+            self.room.removeClient(self)
         
         self.roomName = roomName
         self.sendRoomServer(2, 0)
@@ -884,7 +943,7 @@ class Client:
                     self.roomFuncorps.append(player.playerName)
             self.sendLangueMessage("", "<FC>$FunCorpActiveAvecMembres</FC>", ', '.join(map(str, self.roomFuncorps)))
             
-        self.lastroom = self.roomName
+        self.lastRoom = self.roomName
         
         
     def getPlayerData(self):
@@ -953,7 +1012,6 @@ class Client:
             "DivineModeTitleList": ",".join(map(str, self.divineModeTitleList)),
             "EventTitleList": ",".join(map(str, self.eventTitleList)),
             "StaffTitleList": ",".join(map(str, self.staffTitleList)),
-            "BanHours":self.banHours,
             "ShamanLevel":self.shamanLevel,
             "ShamanExp":self.shamanExp,
             "ShamanExpNext":self.shamanExpNext,
@@ -982,7 +1040,7 @@ class Client:
             "Letters": self.playerLetters,
             "Time": self.playerTime + abs(Utils.getSecondsDiff(self.loginTime)),
             "Karma": self.playerKarma,
-            "AdventureInfo": self.aventureInfo,
+            "AdventureInfo": json.dumps(self.aventureInfo),
             "TotemInfo": self.totemInfo,
             "Roles": ",".join(map(str, self.playerRoles))
         }})

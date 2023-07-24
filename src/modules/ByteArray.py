@@ -205,7 +205,7 @@ class ByteArray:
         self.write(pack("!i" if value < 0 else "!I", value))
         return self
 
-    def writeInt128(self, value: int): # NEW
+    def writeInt128(self, length: int): # NEW
         calc1 = length >> 7
 
         if calc1 == 0:
@@ -307,7 +307,7 @@ class ByteArray:
         chunks = self.decode_chunks(chunks, len(chunks), keys)
         for chunk in chunks:
             barray.writeInt(chunk)
-        self._bytes = barray.packet
+        self._bytes = barray._bytes
         return self
 
     def decrypt(self, keys, packetID = None):

@@ -42,6 +42,13 @@ class Packets:
     def receivePackets(self):
         @self.packet(args=['readUTF'])
         async def Chat_Message(self, message):
+            """
+            Information:
+                Invokes when client send a message.
+                
+            Arguments:
+                message
+            """
             message = message.replace("&amp;#", "&#").replace("<", "&lt;")
             if self.client.isGuest:
                 self.client.sendLangueMessage("", "$Créer_Compte_Parler")
@@ -80,6 +87,13 @@ class Packets:
 
         @self.packet(args=['readUTF'])
         async def Commands(self, command):
+            """
+            Information:
+                Invokes when client send a slash command.
+                
+            Arguments:
+                command - client's command
+            """
             if time.time() - self.client.CMDTime > 1:
                 await self.client.Commands.parseCommand(command)
                 self.client.CMDTime = time.time()
@@ -196,7 +210,6 @@ class Packets:
                             "DivineModeTitleList": "",
                             "EventTitleList": "",
                             "StaffTitleList": "",
-                            "BanHours": 0,
                             "ShamanLevel": 0,
                             "ShamanExp": 0,
                             "ShamanExpNext": 0,
@@ -226,7 +239,7 @@ class Packets:
                             "Avatar": 0,
                             "Time": 0,
                             "Karma": 0,
-                            "AdventureInfo": "",
+                            "AdventureInfo": "[]",
                             "TotemInfo": "",
                             "Roles":""
                         })
@@ -241,10 +254,26 @@ class Packets:
         
         @self.packet(args=['readInt', 'readUTF'])
         async def Create_New_Cafe_Post(self, topicID, message):
+            """
+            Information:
+                Invokes when client create new post in the cafe.
+                
+            Arguments:
+                topicID - cafe topic id
+                message - message
+            """
             await self.client.Cafe.createNewCafePost(topicID, message)
 
         @self.packet(args=['readUTF', 'readUTF'])
         async def Create_New_Cafe_Topic(self, message, title):
+            """
+            Information:
+                Invokes when client create new topic in the cafe.
+                
+            Arguments:
+                message - message
+                title - topic's title
+            """
             await self.client.Cafe.createNewCafeTopic(message, title)
         
         @self.packet(args=['readInt', 'readBoolean'])
@@ -360,7 +389,6 @@ class Packets:
                 
                 for i in _local1:
                     _local2 ^= i
-                    
                 if _local2 != authKey and len(_local1) > 0:
                     self.server.sendStaffMessage(f"The ip address <BV>{Utils.EncodeIP(self.client.ipAddress)}</BV> tried login using bot like aiotfm.", 8)
                     self.client.transport.close()
@@ -447,12 +475,78 @@ class Packets:
         async def Open_Cafe_Topic(self, topicID):
             await self.client.Cafe.openCafeTopic(topicID)
 
+        @self.packet(args=['readUTF'])
+        async def Open_Community_Partner(self, partner):
+            state = False
+            for info in self.server.serverPartners:
+                if info["name"] == partner:
+                    state = True
+                    self.client.sendPacket(TFMCodes.game.send.Open_Link, ByteArray().writeUTF(info["url"]).toByteArray())
+                    break
+            if not state:
+                self.client.sendServerMessage(f"The partner {partner} does not exist.", True)
+
         @self.packet(args=['readBoolean'])
         async def Open_Modopwet(self, isOpen):
             if self.client.privLevel >= 7:
                 self.client.ModoPwet.openModoPwet(isOpen)
                 self.client.ModoPwet.sendAllModopwetLangues()
                 self.client.isModoPwet = isOpen
+                
+        @self.packet
+        async def Open_Shop_List(self):
+            self.client.Shop.sendShopList(True)
+                
+        @self.packet(args=['readByte'])
+        async def Receive_Ping(self, ping_byte):
+            self.client.ping = (time.time() - self.client.pingTime) + ping_byte
+                
+        @self.packet(args=['readUTF'])
+        async def Player_Adventures(self, playerName):
+            player = self.server.players.get(playerName)
+            if player != None:
+                p = ByteArray()
+                p.writeUTF(playerName)
+                p.writeUTF(player.playerLook)
+                p.writeInt(player.aventure_points)
+                p.writeShort(len(player.titleList))
+                p.writeShort(len(player.shopBadges))
+                p.writeUnsignedShort(len(player.aventureInfo))
+                for info in player.aventureInfo:
+                    adv_info = self.server.getAdventureInfo(info["id"])
+                    
+                    p.writeUnsignedShort(9)
+                    p.writeByte(1)
+                    p.writeUnsignedShort(info["id"])
+                    p.writeInt(adv_info["starting_date"])
+                    p.writeInt(info["adv_points"])
+                    p.writeBoolean(time.time() > adv_info["ending_date"])
+                    
+                    x = 0
+                    p.writeUnsignedByte(len(adv_info["items"]))
+                    for item in adv_info["items"]:
+                        y = item["id"].split(":")
+                        player_points = info["items"][x]
+                        p.writeByte(y[0])
+                        p.writeBoolean(False)
+                        p.writeShort(y[1])
+                        p.writeInt(item["amount"])
+                        p.writeByte(player_points > item["minimum_points"])
+                        p.writeByte(1)
+                        p.writeShort(player_points)
+                        p.writeShort(item["minimum_points"])
+                        x += 1
+                        
+                    x = 0
+                    p.writeUnsignedByte(len(adv_info["prizes"]))
+                    for prize in adv_info["prizes"]:
+                        y = prize.split(":")
+                        player_points = info["prizes"][x]
+                        p.writeByte(y[0])
+                        p.writeBoolean(False)
+                        p.writeShort(y[1])
+                        p.writeInt(player_points)
+                self.client.sendPacket(TFMCodes.game.send.Send_Adventure_Popup, p.toByteArray())
                 
         @self.packet(args=['readUTF', 'readByte', 'readUTF'])
         async def Player_Report(self, playerName, _type, comment):
@@ -472,6 +566,10 @@ class Packets:
         @self.packet
         async def Request_Info(self):
             self.client.sendPacket(TFMCodes.game.send.Request_Info, ByteArray().writeUTF("http://localhost/info.php").toByteArray())
+            
+        @self.packet
+        async def Shop_Info(self):
+            self.client.Shop.sendShopInfo()
             
         @self.packet(args=['readInt', 'readByte'])
         async def Survey_Answer(self, playerID, optionID):
@@ -510,6 +608,13 @@ class Packets:
             await self.client.Cafe.voteCafePost(topicID, postID, mode)
 
 
+        @self.packet
+        async def Login_Authorization(self):
+            self.packet.decryptIdentification(self.server.swfInfo["packetKeys"], str(self.client.verifycoder).encode())
+            authCode = self.packet.readInt()
+            print(authCode, self.client.verifycoder)
+
+# [{"id":24, "adv_points":20, "items":[7, 1, 9, 2, 6, 0], "prizes":[0, 0]}]
     async def sendPacket(self, identifiers, data=b"") -> None:
         if self.client.isClosed:
             return

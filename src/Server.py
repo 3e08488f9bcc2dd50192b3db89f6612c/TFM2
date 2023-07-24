@@ -6,7 +6,10 @@ import random
 import os
 import re
 import string
+import src.modules as _module
+from Api import apisrv
 from colorconsole import win
+from importlib import reload
 from src import Client, Room
 from src.modules import ByteArray, Config, Exceptions
 from src.utils.TFMCodes import TFMCodes
@@ -43,10 +46,10 @@ class Server(asyncio.Transport):
         
         # Other
         self.config = Config.ConfigParser()
+        self.Cursor = None
         self.geoIPData = pygeoip.GeoIP('./include/GeoIP.dat')
         self.exceptionManager = Exceptions.ServeurException()
-        #self.api = None
-        self.Cursor = None
+        self.rebootTimer = None
                 
         # Informations
         self.antiCheatInfo = self.config.readFile("./include/settings/anticheat.json")
@@ -54,6 +57,8 @@ class Server(asyncio.Transport):
         self.badWords = self.config.readFile("./include/settings/bad_words.json")
         self.captchaList = self.config.readFile("./include/settings/captchas.json", False)
         self.eventInfo = self.config.readFile("./include/settings/event.json")
+        self.japanExpoCodes = self.config.readFile("./include/settings/codes.json")
+        self.serverPartners = self.config.readFile("./include/settings/partners.json")
         self.serverInfo = self.config.readFile("./include/settings/gameinfo.json")
         self.serverLanguagesInfo = self.config.readFile("./include/settings/languages.json")
         self.serverReports = self.config.readFile("./include/settings/reports.json")
@@ -120,11 +125,16 @@ class Server(asyncio.Transport):
         """
         i = 0
         while i < len(self.badWords):
-            print('x')
             if re.search("[^a-zA-Z]*".join(self.badWords[i]), message.lower()):
                 return True
             i += 1
         return False
+
+    def getAdventureInfo(self, adv_id):
+        for info in self.eventInfo["adventures"]:
+            if info["id"] == adv_id:
+                return info
+        return []
 
     def getBanInfo(self, playerName) -> list:
         """
@@ -197,7 +207,10 @@ class Server(asyncio.Transport):
         """
         Receive the player name
         """
-        rs = self.Cursor['users'].find_one({'PlayerID':playerID})
+        if '@' in playerID:
+            rs = self.Cursor['users'].find_one({'Email':playerID})
+        else:
+            rs = self.Cursor['users'].find_one({'PlayerID':playerID})
         return rs['Username'] if rs else ""
 
     def getPlayerTribeCode(self, playerName) -> int:
@@ -249,6 +262,13 @@ class Server(asyncio.Transport):
         rs = self.Cursor['tribe'].find_one({'Code':tribeCode})
         return rs['Historique'] if rs else ""
 
+    def mumutePlayer(self, playerName, modName):
+        player = self.players.get(playerName)
+        if player != None:
+            self.sendStaffMessage(f"{modName} mumuted {playerName}.", 7)
+            self.saveCasier(playerName, "MUMUTE", modName, "", "")
+            player.isMumuted = True
+
     def mutePlayer(self, playerName, hours, reason, modName, silent) -> None:
         player = self.players.get(playerName)
         if player != None:
@@ -277,6 +297,26 @@ class Server(asyncio.Transport):
                 if player != None:
                     player.playerKarma += 1
                     player.sendServerMessage(f"Your report regarding the player {playerName} has been handled. (karma: {str(player.playerKarma)})", True)
+
+    async def reloadServer(self):
+        reload(_module)
+        self.config.writeFile("./include/settings/bad_ips.json", self.badIPS)
+        self.config.writeFile("./include/settings/bad_words.json", self.badWords)
+        self.config.writeFile("./include/settings/codes.json", self.japanExpoCodes)
+        self.config.writeFile("./include/settings/partners.json", self.serverPartners)
+        self.config.writeFile("./include/settings/reports.json", self.serverReports)
+        for player in self.players.copy().values():
+            player.updateDatabase()
+            await asyncio.sleep(1)
+            player.AntiCheat = _module.AntiCheat(player, self)
+            player.Cafe = _module.Cafe(player, self)
+            player.modoPwet = _module.ModoPwet(player, self)
+            player.tribulle = _module.Tribulle(player, self)
+            player.Shop = _module.Shop(player, self)
+            player.Skills = _module.Skills(player, self)
+            player.Packets = _module.Packets(player, self)
+            player.Commands = _module.Commands(player, self)
+            player.DailyQuests = _module.DailyQuests(player, self)
 
     def removeBan(self, playerName, modName) -> None:
         """
@@ -375,6 +415,24 @@ class Server(asyncio.Transport):
                 elif minLevel == 7 and player.privLevel >= 7:
                     player.sendPacket(TFMCodes.game.send.Message, ByteArray().writeUTF(message).toByteArray())
 
+    def sendServerRestart(self, no=0, sec=1):
+        if sec > 0 or no != 5:
+            self.sendServerRestartSEC(120 if no == 0 else (60 if no == 1 else (30 if no == 2 else (20 if no == 3 else (10 if no == 4 else sec)))))
+            if self.rebootTimer != None:
+                self.rebootTimer.cancel()
+            self.rebootTimer = self.loop.call_later(60 if no == 0 else 30 if no == 1 else 10 if no == 2 or no == 3 else 1, lambda: self.sendServerRestart(no if no == 5 else no + 1, 9 if no == 4 else sec - 1 if no == 5 else 0))
+        return
+
+    def sendServerRestartSEC(self, seconds):
+        for player in self.players.copy().values():
+            player.sendPacket(TFMCodes.game.send.Server_Restart, ByteArray().writeInt(seconds * 1000).toByteArray())
+        if seconds < 1:
+            for player in self.players.copy().values():
+                player.transport.close()
+            self.Cursor['loginlogs'].delete_many({})
+            self.Cursor['commandlog'].delete_many({})
+            os._exit(5)
+
     def sendStaffMessage(self, message, minLevel, tab=False) -> None:
         """
         Send a private message in #Server channel.
@@ -391,6 +449,13 @@ class Server(asyncio.Transport):
     def translateMessage(self, message):
         return ""
 
+
+    def recommendRoom(self, langue=""):
+        return "1"
+
+    def loadShopList(self):
+        return
+        
     def addClientToRoom(self, player, roomName): # Cooming soon
         if roomName in self.rooms:
             self.rooms[roomName].addClient(player)
@@ -402,14 +467,13 @@ class Server(asyncio.Transport):
             #    room.loadLuaModule(room.minigame)
             #else:
             #    room.mapChange2()
-            
-    def saveDatabase(self):
-        pass
 
     def startServer(self) -> None:
         """
         Obviously
         """
+        self.loop.run_until_complete(apisrv.startApi(self).startServer())
+        
         
         if self.serverInfo["db_password"] != "":
             self.Cursor = pymongo.MongoClient(f"mongodb://{self.serverInfo['db_username']}:{self.serverInfo['db_password']}@{self.serverInfo['db']}")['transformice']

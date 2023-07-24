@@ -100,7 +100,12 @@ class TFMCodes:
             Commands = (6, 26)
             
             
+            Open_Shop_List = (8, 20)
             Player_Report = (8, 25)
+            Player_Adventures = (8, 70)
+            
+            # Shop packets
+            Shop_Info = (20, 15)
             
             # Modopwet
             Open_Modopwet = (25, 2)
@@ -124,6 +129,7 @@ class TFMCodes:
             # Logging
             Correct_Version = (28, 1)
             Game_Log = (28, 4)
+            Receive_Ping = (28, 6)
             Computer_Information = (28, 17)
             
             # Cafe Packets
@@ -148,6 +154,8 @@ class TFMCodes:
 
             Get_Language = (176, 1)
             Language_List = (176, 2)
+            Open_Community_Partner = (176, 4)
+            Login_Authorization = (176, 47)
         
         class send:
             Enter_Room = [5, 21]
@@ -166,8 +174,13 @@ class TFMCodes:
             
             
             Profile = [8, 16]
+            Shop_List = [8, 20]
+            JapanExpo_Prize_Popup = [8, 50]
+            Send_Adventure_Popup = [8, 70]
         
             Banner_Login = [16, 9]
+            
+            Shop_Info = [20, 15]
             
             # Modopwet
             Open_Modopwet = [25, 2]
@@ -180,6 +193,7 @@ class TFMCodes:
             Modopwet_Add_Language = [25, 12]
         
         
+            JapanExpo_Prize_Message = [26, 1]
             Player_Identification = [26, 2]
             Correct_Version = [26, 3]
             Login_Result = [26, 12]
@@ -190,8 +204,11 @@ class TFMCodes:
             
             Time_Stamp = [28, 2]
             Message_Langue = [28, 5]
+            Ping = [28, 6]
             Take_Cheese_Popup = [28, 41]
+            Log_Message = [28, 46]
             Request_Info = [28, 50]
+            Server_Restart = [28, 88]
             
             # Cafe packets
             Cafe_Topics_List = [30, 40]
@@ -215,10 +232,12 @@ class TFMCodes:
             Flash_Player_Attention_Popup = [144, 13]
             Minibox_1 = [144, 17]
             
-            # language packets
+            # Pre-login packets
             Set_Language = [176, 5]
             Language_List = [176, 6]
-            Verify_Code = [176, 7]
+            Init_Authorization = [176, 7]
+            Community_Partner = [176, 8]
+            Open_Link = [176, 9]
     
     class old:
         class recv:
@@ -226,6 +245,8 @@ class TFMCodes:
     
         class send:
             Anchors = [5, 7]
+            
+            Player_Disconnect = [8, 7]
             
             Player_Ban_Login = [26, 18]
             

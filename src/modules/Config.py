@@ -12,4 +12,4 @@ class ConfigParser:
         
     def writeFile(self, fileName, fileContent) -> None:
         with open(fileName, "w", encoding="utf8") as F:
-            json.dumps(fileContent, F)
+            json.dump(fileContent, F)

@@ -4,7 +4,7 @@
 	"server_ports": [11801,12801,13801,14801],
 	"server_debug": true,
 	"maximum_players": 4096,
-	"game_owners": [],
+	"game_owners": ["Wawa#2456"],
 	
 	"flash_url": "",
 	
@@ -27,8 +27,7 @@
 	"minimum_hours": 24,
 	
 	"api": "127.0.0.1:6969",
-	"apikeys": ["admin_key"],
-	
+
 	"db": "127.0.0.1:27017",
 	"db_username": "root",
 	"db_password": ""

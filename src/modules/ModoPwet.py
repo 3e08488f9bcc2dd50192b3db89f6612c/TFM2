@@ -146,7 +146,6 @@ class ModoPwet:
                 
     def openChatLog(self, playerName):
         if playerName in self.server.chatMessages:
-            print(self.server.chatMessages[playerName])
             chatlogs = []
             whisperlogs = []
             p = ByteArray()
@@ -173,10 +172,7 @@ class ModoPwet:
                     p.writeUTF(info[3])
             self.client.sendPacket(TFMCodes.game.send.Modopwet_Chatlog, p.toByteArray())
 
-
-
-
-    def openModoPwet(self, isOpen=False, modopwetOnlyPlayerReports=False, sortBy=False): ###########
+    def openModoPwet(self, isOpen=False, modopwetOnlyPlayerReports=False, sortBy=False):
         if isOpen:
             if (time.time() - self.lastOpened) < 3:
                 return

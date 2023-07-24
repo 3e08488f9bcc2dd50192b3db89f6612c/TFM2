@@ -11,7 +11,7 @@ class Cafe:
         self.server = _server
         
     def checkPerm(self) -> bool:
-        if self.server.serverInfo["server_debug"]:
+        if self.server.serverInfo["server_debug"] and not self.client.isGuest:
             return False
         
         return self.client.isGuest or (self.client.cheeseCount < 1000 and self.client.playerTime < 108000)

@@ -1,5 +1,45 @@
 {
-	"name": "test event",
+	"name": "Eastern 2015",
 	"adventure_id": 3,
-	"adventure_img": "x_papaque_2015.jpg"
+	"adventure_img": "x_papaque_2015.jpg", 
+	"adventures":[
+		{
+			"id": 24,  
+			"starting_date": 1675595652, 
+			"ending_date": 1685595652,
+			"items": [
+				{
+					"id": "3:9",
+					"amount": 9,
+					"minimum_points": 9
+				},
+				{
+					"id": "3:39",
+					"amount": 15,
+					"minimum_points": 30
+				},
+				{
+					"id": "3:40",
+					"amount": 15,
+					"minimum_points": 30
+				},
+				{
+					"id": "3:41",
+					"amount": 15,
+					"minimum_points": 30
+				},
+				{
+					"id": "3:42",
+					"amount": 15,
+					"minimum_points": 30
+				},
+				{
+					"id": "3:43",
+					"amount": 15,
+					"minimum_points": 30
+				}
+			],
+			"prizes": ["0:1", "2:2"]
+		}
+	]
 }
