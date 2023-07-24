@@ -13,6 +13,12 @@ New:
 - The server will remove shop cheeses from range 1000 to 9999 on punished players.
 - You can also moderate messages in chats, whispers and tribe.
 - Added GEOIP.dat support. (You don't need anymore to use any request about get ip information).
+- Added Player API.
+- Commands (/nomip) now works on offline players.
+- The commands (/creator, /moveplayer) now supports rooms with space.
+- The command /banip will also disconnect everyone with same ip address.
+- Moderators and now find admins using /lsmodo.
+- Added Commands (/realname)
 
 Fixed:
 - Fixed bug with email address.
@@ -50,17 +56,28 @@ Fixed:
 - Fixed not showing the ban message in modopwet.
 - Fixed when modopwet does not update when player connects to game.
 - Fixed punishment pop up appears only in cheaters who were banned from the game.
+- Fixed the require tribe permission in commands.
+- Fixed the ping system.
 
 Finished:
 [+] Account registration - 100%
+[+] API - 100%
 [+] Cafe - 100%
+[+] Connection Logs & IP Info - 100%
+[+] Japan Expo Sytem - 100%
 [+] Languages - 100%
 [+] Surveys - 100%
+[+] Partner System - 100%
 [+] Permissions & Staff Channels - 100%
 [+] Punishments - 100% (Ban and mute)
 [+] Tribulle - 100%
+
+
 [+] Login - 45%
+[+] Ping & FPS - 50%
 [+] Modopwet - 90%
-[+] Commands - 15%
+[+] Commands - 30%
 [+] Room Management - 5%
 [+] Drawing - 0%
+[+] Shop & Fashion Squad Tools - 0%
+[+] Events & Adventures - 20%
