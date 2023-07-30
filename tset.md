@@ -2,7 +2,7 @@
 - Adds a certain amount languages in modopwet.\
 \
 Send/Received: Send\
-Decrypt: False\
+Decrypt: False
 
 ### Parameters:
 total (short integer)\
